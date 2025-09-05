@@ -1,0 +1,11 @@
+C:\SideProjects\LibraryProject\LibraryTerminal\obj\Build\LibraryTerminal.csproj.AssemblyReference.cache
+C:\SideProjects\LibraryProject\LibraryTerminal\obj\Build\LibraryTerminal.csproj.CoreCompileInputs.cache
+C:\SideProjects\LibraryProject\LibraryTerminal\obj\Build\LibraryTerminal.csproj.GenerateResource.cache
+C:\SideProjects\LibraryProject\LibraryTerminal\bin\Build\LibraryTerminal.exe
+C:\SideProjects\LibraryProject\LibraryTerminal\bin\Build\ManagedClient.dll
+C:\SideProjects\LibraryProject\LibraryTerminal\bin\Build\Antlr4.Runtime.net35.dll
+C:\SideProjects\LibraryProject\LibraryTerminal\bin\Build\ManagedClient.pdb
+C:\SideProjects\LibraryProject\LibraryTerminal\bin\Build\Antlr4.Runtime.net35.xml
+C:\SideProjects\LibraryProject\LibraryTerminal\obj\Build\LibraryTerminal.MainForm.resources
+C:\SideProjects\LibraryProject\LibraryTerminal\obj\Build\LibraryTerminal.csproj.CopyComplete
+C:\SideProjects\LibraryProject\LibraryTerminal\obj\Build\LibraryTerminal.exe
