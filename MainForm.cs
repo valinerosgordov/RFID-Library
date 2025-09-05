@@ -3,7 +3,7 @@ using System.Configuration;
 using System.Linq;
 using System.Windows.Forms;
 
-namespace LibraryTerminal   // при необходимости подмени на свой namespace
+namespace LibraryTerminal
 {
     public partial class MainForm : Form
     {
@@ -35,25 +35,26 @@ namespace LibraryTerminal   // при необходимости подмени 
         private readonly Timer _tick = new Timer { Interval = 1000 };
         private DateTime? _deadline = null;
 
-        // === Демо-режим ===
+        // === Демо-режим (для железа — false) ===
         private static readonly bool SIM_MODE = false;
 
-        // ===== Статусы 910^a (пример, подставь свои при работе с ИРБИС) =====
+        // ===== Статусы 910^a (пример) =====
         private const string STATUS_IN_STOCK = "0"; // в фонде (можно выдавать)
         private const string STATUS_ISSUED = "1"; // выдано
 
         // ===== Сервисы/устройства =====
-        private IrbisServiceManaged _svc;                 // твой сервис для ИРБИС
-        private CardReaderSerial _card;               // COM-считыватель карт
-        private BookReaderSerial _book;               // COM-считыватель книг
-        private ArduinoClientSerial _ardu;               // контроллер шкафа/места
+        private IrbisServiceManaged _svc;
+        private CardReaderSerial _card;        // карта
+        private BookReaderSerial _bookTake;    // книга (выдача)
+        private BookReaderSerial _bookReturn;  // книга (возврат)
+        private ArduinoClientSerial _ardu;        // контроллер шкафа/места
 
         public MainForm()
         {
             InitializeComponent();
         }
 
-        // Явная проверка соединения с ИРБИС
+        // Тест IRBIS
         private void TestIrbisConnection()
         {
             try
@@ -62,9 +63,9 @@ namespace LibraryTerminal   // при необходимости подмени 
                     throw new Exception("Сервис IRBIS не инициализирован.");
 
                 string probe = Guid.NewGuid().ToString("N");
-                try { _svc.UseDatabase("KNIGA"); } catch { /* если уже выбрана — ок */ }
+                try { _svc.UseDatabase("KNIGA"); } catch { }
 
-                var _ = _svc.FindByInvOrTag(probe);   // ключевой вызов
+                var _ = _svc.FindByInvOrTag(probe);
                 MessageBox.Show("IRBIS: подключение OK", "IRBIS",
                     MessageBoxButtons.OK, MessageBoxIcon.Information);
             } catch (Exception ex)
@@ -78,11 +79,9 @@ namespace LibraryTerminal   // при необходимости подмени 
         {
             this.KeyPreview = true;
 
-            // Таймер таймаутов
             _tick.Interval = 250;
             _tick.Tick += Tick_Tick;
 
-            // Тексты и индикаторы
             SetUiTexts();
             AddWaitIndicators();
 
@@ -91,7 +90,7 @@ namespace LibraryTerminal   // при необходимости подмени 
 
             ShowScreen(panelMenu);
 
-            // --- ИРБИС ---
+            // --- IRBIS ---
             _svc = new IrbisServiceManaged();
             try
             {
@@ -109,16 +108,24 @@ namespace LibraryTerminal   // при необходимости подмени 
             {
                 try
                 {
+                    // ПОРТЫ: можно указать явно (COM5) или auto:VID_xxxx&PID_yyyy,index=0
                     string cardPort = PortResolver.Resolve(ConfigurationManager.AppSettings["CardPort"]);
-                    string bookPort = PortResolver.Resolve(ConfigurationManager.AppSettings["BookPort"]);
+                    string bookTakePort = PortResolver.Resolve(
+                                              ConfigurationManager.AppSettings["BookTakePort"]
+                                              ?? ConfigurationManager.AppSettings["BookPort"]);
+                    string bookRetPort = PortResolver.Resolve(
+                                              ConfigurationManager.AppSettings["BookReturnPort"]
+                                              ?? ConfigurationManager.AppSettings["BookPort"]);
                     string arduinoPort = PortResolver.Resolve(ConfigurationManager.AppSettings["ArduinoPort"]);
 
-                    int baudCard = int.Parse(ConfigurationManager.AppSettings["BaudCard"] ?? "115200");
-                    int baudBook = int.Parse(ConfigurationManager.AppSettings["BaudBook"] ?? "115200");
+                    int baudCard = int.Parse(ConfigurationManager.AppSettings["BaudCard"] ?? "9600");
+                    int baudBookTake = int.Parse(ConfigurationManager.AppSettings["BaudBookTake"] ?? ConfigurationManager.AppSettings["BaudBook"] ?? "9600");
+                    int baudBookRet = int.Parse(ConfigurationManager.AppSettings["BaudBookReturn"] ?? ConfigurationManager.AppSettings["BaudBook"] ?? "9600");
                     int baudArduino = int.Parse(ConfigurationManager.AppSettings["BaudArduino"] ?? "115200");
 
-                    string nlCard = ConfigurationManager.AppSettings["NewLineCard"] ?? "\n";
-                    string nlBook = ConfigurationManager.AppSettings["NewLineBook"] ?? "\n";
+                    string nlCard = ConfigurationManager.AppSettings["NewLineCard"] ?? "\r\n";
+                    string nlBookTake = ConfigurationManager.AppSettings["NewLineBookTake"] ?? ConfigurationManager.AppSettings["NewLineBook"] ?? "\r\n";
+                    string nlBookRet = ConfigurationManager.AppSettings["NewLineBookReturn"] ?? ConfigurationManager.AppSettings["NewLineBook"] ?? "\r\n";
                     string nlArduino = ConfigurationManager.AppSettings["NewLineArduino"] ?? "\n";
 
                     int readTo = int.Parse(ConfigurationManager.AppSettings["ReadTimeoutMs"] ?? "700");
@@ -127,19 +134,25 @@ namespace LibraryTerminal   // при необходимости подмени 
                     int debounce = int.Parse(ConfigurationManager.AppSettings["DebounceMs"] ?? "500");
 
                     if (string.IsNullOrEmpty(cardPort)) throw new Exception("Не найден порт карт-ридера");
-                    if (string.IsNullOrEmpty(bookPort)) throw new Exception("Не найден порт ридера книг");
-                    if (string.IsNullOrEmpty(arduinoPort)) throw new Exception("Не найден порт Arduino");
+                    if (string.IsNullOrEmpty(bookTakePort)) throw new Exception("Не найден порт ридера книг (выдача)");
+                    if (string.IsNullOrEmpty(bookRetPort)) throw new Exception("Не найден порт ридера книг (возврат)");
 
                     _card = new CardReaderSerial(cardPort, baudCard, nlCard, readTo, writeTo, reconnMs, debounce);
-                    _book = new BookReaderSerial(bookPort, baudBook, nlBook, readTo, writeTo, reconnMs, debounce);
-                    _ardu = new ArduinoClientSerial(arduinoPort, baudArduino, nlArduino, readTo, writeTo, reconnMs);
+                    _bookTake = new BookReaderSerial(bookTakePort, baudBookTake, nlBookTake, readTo, writeTo, reconnMs, debounce);
+                    _bookReturn = (bookRetPort == bookTakePort)
+                                    ? _bookTake
+                                    : new BookReaderSerial(bookRetPort, baudBookRet, nlBookRet, readTo, writeTo, reconnMs, debounce);
+                    if (!string.IsNullOrEmpty(arduinoPort))
+                        _ardu = new ArduinoClientSerial(arduinoPort, baudArduino, nlArduino, readTo, writeTo, reconnMs);
 
                     _card.OnUid += OnCardUid;
-                    _book.OnTag += OnBookTag;
+                    _bookTake.OnTag += OnBookTagTake;
+                    if (_bookReturn != _bookTake) _bookReturn.OnTag += OnBookTagReturn;
 
                     _card.Start();
-                    _book.Start();
-                    _ardu.Start();
+                    _bookTake.Start();
+                    if (_bookReturn != _bookTake) _bookReturn.Start();
+                    _ardu?.Start();
                 } catch (Exception ex)
                 {
                     MessageBox.Show("Оборудование: " + ex.Message, "COM",
@@ -153,12 +166,12 @@ namespace LibraryTerminal   // при необходимости подмени 
                     "1 — карта\n2 — книга (ОК)\n3 — книга (ошибка)\n4 — книга (нет места)\nF9 — тест IRBIS",
                     "Demo", MessageBoxButtons.OK, MessageBoxIcon.Information);
             }
-        } // <= конец MainForm_Load
+        } // конец MainForm_Load
 
-        // Создаём видимые кнопки-симуляторы на экранах 2–5
+        // ===== Симуляторы (только для SIM_MODE) =====
         private void AddSimButtons()
         {
-            // Экран 2 — карта (выдача)
+            // S2 — карта (выдача)
             btnSimCardTake = new Button
             {
                 Text = "Симулировать карту",
@@ -169,7 +182,7 @@ namespace LibraryTerminal   // при необходимости подмени 
             btnSimCardTake.Click += (s, e) => OnCardUid("SIM_CARD");
             panelWaitCardTake.Controls.Add(btnSimCardTake);
 
-            // Экран 4 — карта (возврат)
+            // S4 — карта (возврат)
             btnSimCardReturn = new Button
             {
                 Text = "Симулировать карту",
@@ -180,7 +193,7 @@ namespace LibraryTerminal   // при необходимости подмени 
             btnSimCardReturn.Click += (s, e) => OnCardUid("SIM_CARD");
             panelWaitCardReturn.Controls.Add(btnSimCardReturn);
 
-            // Экран 3 — книга (выдача)
+            // S3 — книга (выдача)
             btnSimBookTake = new Button
             {
                 Text = "Симулировать книгу (ОК)",
@@ -188,10 +201,10 @@ namespace LibraryTerminal   // при необходимости подмени 
                 Location = new System.Drawing.Point((800 - 240) / 2, 420),
                 Font = new System.Drawing.Font("Segoe UI", 12F)
             };
-            btnSimBookTake.Click += (s, e) => OnBookTag("SIM_BOOK_OK");
+            btnSimBookTake.Click += (s, e) => OnBookTagTake("SIM_BOOK_OK");
             panelScanBook.Controls.Add(btnSimBookTake);
 
-            // Экран 5 — книга (возврат)
+            // S5 — книга (возврат)
             btnSimBookReturn = new Button
             {
                 Text = "Симулировать книгу (ОК)",
@@ -199,10 +212,10 @@ namespace LibraryTerminal   // при необходимости подмени 
                 Location = new System.Drawing.Point((800 - 240) / 2, 420),
                 Font = new System.Drawing.Font("Segoe UI", 12F)
             };
-            btnSimBookReturn.Click += (s, e) => OnBookTag("SIM_BOOK_OK");
+            btnSimBookReturn.Click += (s, e) => OnBookTagReturn("SIM_BOOK_OK");
             panelScanBookReturn.Controls.Add(btnSimBookReturn);
 
-            // Доп.кнопки для ошибок (по желанию)
+            // Доп.кнопки ошибок
             var bBad = new Button
             {
                 Text = "Книга не принята",
@@ -210,7 +223,7 @@ namespace LibraryTerminal   // при необходимости подмени 
                 Location = new System.Drawing.Point((800 - 200) / 2, 480),
                 Font = new System.Drawing.Font("Segoe UI", 10F)
             };
-            bBad.Click += (s, e) => OnBookTag("SIM_BOOK_BAD");
+            bBad.Click += (s, e) => OnBookTagTake("SIM_BOOK_BAD");
             panelScanBook.Controls.Add(bBad);
 
             var bFull = new Button
@@ -220,32 +233,32 @@ namespace LibraryTerminal   // при необходимости подмени 
                 Location = new System.Drawing.Point((800 - 200) / 2, 480),
                 Font = new System.Drawing.Font("Segoe UI", 10F)
             };
-            bFull.Click += (s, e) => OnBookTag("SIM_BOOK_FULL");
+            bFull.Click += (s, e) => OnBookTagReturn("SIM_BOOK_FULL");
             panelScanBookReturn.Controls.Add(bFull);
         }
 
         protected override void OnFormClosing(FormClosingEventArgs e)
         {
-            try { if (_card != null) _card.Dispose(); } catch { }
-            try { if (_book != null) _book.Dispose(); } catch { }
-            try { if (_ardu != null) _ardu.Dispose(); } catch { }
+            try { _card?.Dispose(); } catch { }
+            try
+            {
+                if (_bookReturn != null && _bookReturn != _bookTake) _bookReturn.Dispose();
+                _bookTake?.Dispose();
+            } catch { }
+            try { _ardu?.Dispose(); } catch { }
             base.OnFormClosing(e);
         }
 
-        // ===== Горячие клавиши для демо =====
+        // ===== Горячие клавиши (работают только в SIM_MODE) =====
         protected override bool ProcessCmdKey(ref Message msg, Keys keyData)
         {
             if (!SIM_MODE) return base.ProcessCmdKey(ref msg, keyData);
 
             if (keyData == Keys.D1) { OnCardUid("SIM_CARD"); return true; }
-            if (keyData == Keys.D2) { OnBookTag("SIM_BOOK_OK"); return true; }
-            if (keyData == Keys.D3) { OnBookTag("SIM_BOOK_BAD"); return true; }
-            if (keyData == Keys.D4) { OnBookTag("SIM_BOOK_FULL"); return true; }
-            if (keyData == Keys.F9)
-            {
-                TestIrbisConnection();
-                return true;
-            }
+            if (keyData == Keys.D2) { OnBookTagTake("SIM_BOOK_OK"); return true; }
+            if (keyData == Keys.D3) { OnBookTagTake("SIM_BOOK_BAD"); return true; }
+            if (keyData == Keys.D4) { OnBookTagReturn("SIM_BOOK_FULL"); return true; }
+            if (keyData == Keys.F9) { TestIrbisConnection(); return true; }
 
             return base.ProcessCmdKey(ref msg, keyData);
         }
@@ -306,7 +319,7 @@ namespace LibraryTerminal   // при необходимости подмени 
         {
             if (InvokeRequired) { BeginInvoke(new Action<string>(OnCardUid), uid); return; }
 
-            bool ok = SIM_MODE ? false : CheckReader(uid); // в демо карта всегда «валидна»
+            bool ok = SIM_MODE ? true : CheckReader(uid);
             if (!ok)
             {
                 Switch(Screen.S8_CardFail, panelError, TIMEOUT_SEC_ERROR);
@@ -321,15 +334,25 @@ namespace LibraryTerminal   // при необходимости подмени 
 
         private bool CheckReader(string uid) => !string.IsNullOrWhiteSpace(uid);
 
-        // ===== Считывание книги =====
+        // ===== Считывание книги (2 ридера) =====
+        private void OnBookTagTake(string tag)
+        {
+            if (InvokeRequired) { BeginInvoke(new Action<string>(OnBookTagTake), tag); return; }
+            if (_screen == Screen.S3_WaitBookTake) HandleTake(tag);
+        }
+
+        private void OnBookTagReturn(string tag)
+        {
+            if (InvokeRequired) { BeginInvoke(new Action<string>(OnBookTagReturn), tag); return; }
+            if (_screen == Screen.S5_WaitBookReturn) HandleReturn(tag);
+        }
+
+        // запасной общий обработчик (если нужно)
         private void OnBookTag(string tag)
         {
             if (InvokeRequired) { BeginInvoke(new Action<string>(OnBookTag), tag); return; }
-
-            if (_screen == Screen.S3_WaitBookTake)
-                HandleTake(tag);
-            else if (_screen == Screen.S5_WaitBookReturn)
-                HandleReturn(tag);
+            if (_screen == Screen.S3_WaitBookTake) HandleTake(tag);
+            else if (_screen == Screen.S5_WaitBookReturn) HandleReturn(tag);
         }
 
         // --- Выдача (3 -> 6/7/8) ---
@@ -451,18 +474,15 @@ namespace LibraryTerminal   // при необходимости подмени 
         // ===== Хелперы UI =====
         private void SetUiTexts()
         {
-            // Стартовое меню
             lblTitleMenu.Text = "Библиотека\nФилиал №1";
             btnTakeBook.Text = "📕 Взять книгу";
             btnReturnBook.Text = "📗 Вернуть книгу";
 
-            // Ожидание карты/книги
             lblWaitCardTake.Text = "Приложите карту читателя для выдачи";
             lblWaitCardReturn.Text = "Приложите карту читателя для возврата";
             lblScanBook.Text = "Поднесите книгу к считывателю";
             lblScanBookReturn.Text = "Поднесите возвращаемую книгу к считывателю";
 
-            // Результаты/ошибки
             lblSuccess.Text = "Операция выполнена";
             lblNoTag.Text = "Метка книги не распознана. Попробуйте ещё раз";
             lblError.Text = "Карта не распознана или ошибка авторизации";
@@ -507,7 +527,6 @@ namespace LibraryTerminal   // при необходимости подмени 
                 if (c is Panel p) p.Controls.Add(back);
         }
 
-        // (Если в Designer осталась тест-кнопка «в меню»)
         private void btnToMenu_Click(object sender, EventArgs e) => Switch(Screen.S1_Menu, panelMenu);
     }
 }

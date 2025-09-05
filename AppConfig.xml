@@ -1,18 +1,23 @@
 ﻿<?xml version="1.0" encoding="utf-8" ?>
 <configuration>
   <appSettings>
-    <add key="BookPort" value="COM5"/>
-    <!-- если это ридер карт, то: <add key="CardPort" value="COM5"/> -->
-    <add key="ArduinoPort" value="COM7"/>
-    <!-- позже подставишь реальный -->
-    <add key="CardPort" value="COM6"/>
-    <!-- временно любой, если карты ещё нет -->
+    <add key="CardPort"       value="COM5"/>
+    <add key="BookTakePort"   value="COM6"/>
+    <add key="BookReturnPort" value="COM7"/>
 
-    <add key="BaudBook" value="115200"/>
-    <!-- если тишина/абракадабра — попробуй 9600 -->
-    <add key="NewLineBook" value="\r\n"/>
-    <!-- многие CP210x шлют CRLF -->
-    <!-- остальные ключи оставь как были -->
+    <add key="BaudCard"       value="9600"/>
+    <add key="BaudBookTake"   value="9600"/>
+    <add key="BaudBookReturn" value="9600"/>
+    <add key="BaudArduino"    value="115200"/>
+
+    <add key="NewLineCard"       value="\r\n"/>
+    <add key="NewLineBookTake"   value="\r\n"/>
+    <add key="NewLineBookReturn" value="\r\n"/>
+    <add key="NewLineArduino"    value="\n"/>
+
+    <add key="ReadTimeoutMs"   value="700"/>
+    <add key="WriteTimeoutMs"  value="700"/>
+    <add key="AutoReconnectMs" value="1500"/>
+    <add key="DebounceMs"      value="500"/>
   </appSettings>
-
 </configuration>
