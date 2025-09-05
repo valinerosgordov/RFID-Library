@@ -1,23 +1,17 @@
 ﻿<?xml version="1.0" encoding="utf-8" ?>
 <configuration>
   <appSettings>
-    <add key="CardPort"       value="COM5"/>
-    <add key="BookTakePort"   value="COM6"/>
-    <add key="BookReturnPort" value="COM7"/>
+    <appSettings>
+      <add key="BookTakePort"   value="COM5"/>
+      <add key="BaudBookTake"   value="9600"/>
+      <add key="NewLineBookTake" value="\r\n"/>
 
-    <add key="BaudCard"       value="9600"/>
-    <add key="BaudBookTake"   value="9600"/>
-    <add key="BaudBookReturn" value="9600"/>
-    <add key="BaudArduino"    value="115200"/>
 
-    <add key="NewLineCard"       value="\r\n"/>
-    <add key="NewLineBookTake"   value="\r\n"/>
-    <add key="NewLineBookReturn" value="\r\n"/>
-    <add key="NewLineArduino"    value="\n"/>
+      <add key="ReadTimeoutMs"   value="700"/>
+      <add key="WriteTimeoutMs"  value="700"/>
+      <add key="AutoReconnectMs" value="1500"/>
+      <add key="DebounceMs"      value="500"/>
+    </appSettings>
 
-    <add key="ReadTimeoutMs"   value="700"/>
-    <add key="WriteTimeoutMs"  value="700"/>
-    <add key="AutoReconnectMs" value="1500"/>
-    <add key="DebounceMs"      value="500"/>
   </appSettings>
 </configuration>

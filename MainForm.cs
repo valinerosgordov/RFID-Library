@@ -35,8 +35,10 @@ namespace LibraryTerminal
         private readonly Timer _tick = new Timer { Interval = 1000 };
         private DateTime? _deadline = null;
 
-        // === Демо-режим (для железа — false) ===
-        private static readonly bool SIM_MODE = false;
+        // === Режимы ===
+        private static readonly bool SIM_MODE = false; // железо активно
+        private const bool DEMO_UI = true;            // показывать демо-кнопки на экранах
+        private const bool DEMO_KEYS = true;            // горячие клавиши 1–4, F9
 
         // ===== Статусы 910^a (пример) =====
         private const string STATUS_IN_STOCK = "0"; // в фонде (можно выдавать)
@@ -63,7 +65,7 @@ namespace LibraryTerminal
                     throw new Exception("Сервис IRBIS не инициализирован.");
 
                 string probe = Guid.NewGuid().ToString("N");
-                try { _svc.UseDatabase("KNIGA"); } catch { }
+                try { _svc.UseDatabase("IBIS"); } catch { }
 
                 var _ = _svc.FindByInvOrTag(probe);
                 MessageBox.Show("IRBIS: подключение OK", "IRBIS",
@@ -85,8 +87,8 @@ namespace LibraryTerminal
             SetUiTexts();
             AddWaitIndicators();
 
-            if (SIM_MODE) AddSimButtons();
-            AddBackButtonForSim();
+            if (DEMO_UI) AddSimButtons();
+            if (DEMO_UI) AddBackButtonForSim();
 
             ShowScreen(panelMenu);
 
@@ -94,7 +96,7 @@ namespace LibraryTerminal
             _svc = new IrbisServiceManaged();
             try
             {
-                _svc.Connect("host=192.168.56.1;port=6666;user=MASTER;password=MASTERKEY;DB=IBIS;");
+                _svc.Connect("host=127.0.0.1;port=6666;user=MASTER;password=MASTERKEY;DB=IBIS;");
                 _svc.UseDatabase("IBIS");
             } catch (Exception ex)
             {
@@ -111,11 +113,11 @@ namespace LibraryTerminal
                     // ПОРТЫ: можно указать явно (COM5) или auto:VID_xxxx&PID_yyyy,index=0
                     string cardPort = PortResolver.Resolve(ConfigurationManager.AppSettings["CardPort"]);
                     string bookTakePort = PortResolver.Resolve(
-                                              ConfigurationManager.AppSettings["BookTakePort"]
-                                              ?? ConfigurationManager.AppSettings["BookPort"]);
+                        ConfigurationManager.AppSettings["BookTakePort"]
+                        ?? ConfigurationManager.AppSettings["BookPort"]);
                     string bookRetPort = PortResolver.Resolve(
-                                              ConfigurationManager.AppSettings["BookReturnPort"]
-                                              ?? ConfigurationManager.AppSettings["BookPort"]);
+                        ConfigurationManager.AppSettings["BookReturnPort"]
+                        ?? ConfigurationManager.AppSettings["BookPort"]);
                     string arduinoPort = PortResolver.Resolve(ConfigurationManager.AppSettings["ArduinoPort"]);
 
                     int baudCard = int.Parse(ConfigurationManager.AppSettings["BaudCard"] ?? "9600");
@@ -140,8 +142,9 @@ namespace LibraryTerminal
                     _card = new CardReaderSerial(cardPort, baudCard, nlCard, readTo, writeTo, reconnMs, debounce);
                     _bookTake = new BookReaderSerial(bookTakePort, baudBookTake, nlBookTake, readTo, writeTo, reconnMs, debounce);
                     _bookReturn = (bookRetPort == bookTakePort)
-                                    ? _bookTake
-                                    : new BookReaderSerial(bookRetPort, baudBookRet, nlBookRet, readTo, writeTo, reconnMs, debounce);
+                                   ? _bookTake
+                                   : new BookReaderSerial(bookRetPort, baudBookRet, nlBookRet, readTo, writeTo, reconnMs, debounce);
+
                     if (!string.IsNullOrEmpty(arduinoPort))
                         _ardu = new ArduinoClientSerial(arduinoPort, baudArduino, nlArduino, readTo, writeTo, reconnMs);
 
@@ -159,16 +162,9 @@ namespace LibraryTerminal
                         MessageBoxButtons.OK, MessageBoxIcon.Warning);
                 }
             }
-            else
-            {
-                MessageBox.Show(
-                    "Демо-режим:\n" +
-                    "1 — карта\n2 — книга (ОК)\n3 — книга (ошибка)\n4 — книга (нет места)\nF9 — тест IRBIS",
-                    "Demo", MessageBoxButtons.OK, MessageBoxIcon.Information);
-            }
         } // конец MainForm_Load
 
-        // ===== Симуляторы (только для SIM_MODE) =====
+        // ===== Симуляторы (демо-кнопки) =====
         private void AddSimButtons()
         {
             // S2 — карта (выдача)
@@ -235,6 +231,12 @@ namespace LibraryTerminal
             };
             bFull.Click += (s, e) => OnBookTagReturn("SIM_BOOK_FULL");
             panelScanBookReturn.Controls.Add(bFull);
+
+            // гарантируем, что кнопки поверх
+            btnSimCardTake.BringToFront();
+            btnSimCardReturn.BringToFront();
+            btnSimBookTake.BringToFront();
+            btnSimBookReturn.BringToFront();
         }
 
         protected override void OnFormClosing(FormClosingEventArgs e)
@@ -249,10 +251,10 @@ namespace LibraryTerminal
             base.OnFormClosing(e);
         }
 
-        // ===== Горячие клавиши (работают только в SIM_MODE) =====
+        // ===== Горячие клавиши (демо) =====
         protected override bool ProcessCmdKey(ref Message msg, Keys keyData)
         {
-            if (!SIM_MODE) return base.ProcessCmdKey(ref msg, keyData);
+            if (!DEMO_KEYS) return base.ProcessCmdKey(ref msg, keyData);
 
             if (keyData == Keys.D1) { OnCardUid("SIM_CARD"); return true; }
             if (keyData == Keys.D2) { OnBookTagTake("SIM_BOOK_OK"); return true; }
@@ -319,7 +321,7 @@ namespace LibraryTerminal
         {
             if (InvokeRequired) { BeginInvoke(new Action<string>(OnCardUid), uid); return; }
 
-            bool ok = SIM_MODE ? true : CheckReader(uid);
+            bool ok = SIM_MODE ? true : CheckReader(uid); // в демо карта всегда «валидна»
             if (!ok)
             {
                 Switch(Screen.S8_CardFail, panelError, TIMEOUT_SEC_ERROR);
@@ -512,7 +514,6 @@ namespace LibraryTerminal
 
         private void AddBackButtonForSim()
         {
-            if (!SIM_MODE) return;
             var back = new Button
             {
                 Text = "⟵ В меню",
