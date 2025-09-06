@@ -1,6 +1,5 @@
 using System;
 using System.Configuration;
-using System.Linq;
 using System.Threading.Tasks;
 using System.Windows.Forms;
 
@@ -38,7 +37,7 @@ namespace LibraryTerminal
 
         // === Режимы ===
         private static readonly bool SIM_MODE = false; // железо активно
-        private const bool DEMO_UI = true;             // показывать демо-кнопки на экранах
+        private const bool DEMO_UI = true;           // показывать демо-кнопки на экранах
         private const bool DEMO_KEYS = true;           // горячие клавиши 1–4, F9
 
         // ===== Статусы 910^a (пример) =====
@@ -50,22 +49,32 @@ namespace LibraryTerminal
         private CardReaderSerial _card;        // карта
         private BookReaderSerial _bookTake;    // книга (выдача)
         private BookReaderSerial _bookReturn;  // книга (возврат)
-        private ArduinoClientSerial _ardu;     // контроллер шкафа/места
+        private ArduinoClientSerial _ardu;       // контроллер шкафа/места
 
         public MainForm()
         {
             InitializeComponent();
         }
 
-        // === Автоконнект к ИРБИС после показа окна + автотест ===
+        // ===== Универсальные обёртки для фонового выполнения (чтобы не блокировать UI) =====
+        private static Task OffUi(Action a) => Task.Run(a);
+        private static Task<T> OffUi<T>(Func<T> f) => Task.Run(f);
+
+        // === Автоконнект к ИРБИС после показа окна + «probe» ===
         protected override async void OnShown(EventArgs e)
         {
             base.OnShown(e);
-            await InitIrbisWithRetry(); // подключение с ретраями
-            TestIrbisConnection();      // автозапуск теста
+            try
+            {
+                await InitIrbisWithRetryAsync(); // подключение с ретраями — не блокирует UI
+                await TestIrbisConnectionAsync(); // лёгкий «probe» в фоне
+            } catch
+            {
+                // подавляем, чтобы окно не упало; ошибки дальше покажем через MessageBox при первых операциях
+            }
         }
 
-        private async Task InitIrbisWithRetry()
+        private async Task InitIrbisWithRetryAsync()
         {
             if (SIM_MODE) { _svc = new IrbisServiceManaged(); return; }
 
@@ -77,9 +86,11 @@ namespace LibraryTerminal
             {
                 try
                 {
-                    _svc.Connect(conn);
-                    _svc.UseDatabase("IBIS"); // проверим доступность
-                    return;
+                    await OffUi(() => {
+                        _svc.Connect(conn);        // блокирующая библиотека — в фон
+                        _svc.UseDatabase("IBIS");
+                    });
+                    return; // успех
                 } catch (Exception ex)
                 {
                     last = ex;
@@ -91,26 +102,31 @@ namespace LibraryTerminal
                 "IRBIS", MessageBoxButtons.OK, MessageBoxIcon.Error);
         }
 
-        // Тест IRBIS (раньше был по F9 — теперь ещё и запускается автоматически в OnShown)
-        private void TestIrbisConnection()
+        // Тест IRBIS (раньше был по F9 — теперь и запускается автоматически в OnShown)
+        private async Task TestIrbisConnectionAsync()
         {
             try
             {
                 if (_svc == null)
                     _svc = new IrbisServiceManaged();
 
-                // лёгкая «проверка-живости»
-                try { _svc.UseDatabase("IBIS"); } catch
+                await OffUi(() => {
+                    try { _svc.UseDatabase("IBIS"); } catch
+                    {
+                        _svc.Connect("host=127.0.0.1;port=6666;user=MASTER;password=MASTERKEY;DB=IBIS;");
+                        _svc.UseDatabase("IBIS");
+                    }
+
+                    // лёгкая «проверка-живости»
+                    var probe = Guid.NewGuid().ToString("N");
+                    _svc.FindByInvOrTag(probe);
+                });
+
+                if (DEMO_UI)
                 {
-                    _svc.Connect("host=127.0.0.1;port=6666;user=MASTER;password=MASTERKEY;DB=IBIS;");
-                    _svc.UseDatabase("IBIS");
+                    MessageBox.Show("IRBIS: подключение OK", "IRBIS",
+                        MessageBoxButtons.OK, MessageBoxIcon.Information);
                 }
-
-                var probe = Guid.NewGuid().ToString("N");
-                _svc.FindByInvOrTag(probe);
-
-                MessageBox.Show("IRBIS: подключение OK", "IRBIS",
-                    MessageBoxButtons.OK, MessageBoxIcon.Information);
             } catch (Exception ex)
             {
                 MessageBox.Show("IRBIS: " + ex.Message, "IRBIS",
@@ -190,13 +206,13 @@ namespace LibraryTerminal
                         MessageBoxButtons.OK, MessageBoxIcon.Warning);
                 }
             }
-        } 
+        }
 
         // ===== Симуляторы (демо-кнопки) =====
         private void AddSimButtons()
         {
             // S2 — карта (выдача)
-            btnSimCardTake = new Button
+            var btnSimCardTake = new Button
             {
                 Text = "Симулировать карту",
                 Size = new System.Drawing.Size(240, 48),
@@ -207,7 +223,7 @@ namespace LibraryTerminal
             panelWaitCardTake.Controls.Add(btnSimCardTake);
 
             // S4 — карта (возврат)
-            btnSimCardReturn = new Button
+            var btnSimCardReturn = new Button
             {
                 Text = "Симулировать карту",
                 Size = new System.Drawing.Size(240, 48),
@@ -218,7 +234,7 @@ namespace LibraryTerminal
             panelWaitCardReturn.Controls.Add(btnSimCardReturn);
 
             // S3 — книга (выдача)
-            btnSimBookTake = new Button
+            var btnSimBookTake = new Button
             {
                 Text = "Симулировать книгу (ОК)",
                 Size = new System.Drawing.Size(240, 48),
@@ -229,7 +245,7 @@ namespace LibraryTerminal
             panelScanBook.Controls.Add(btnSimBookTake);
 
             // S5 — книга (возврат)
-            btnSimBookReturn = new Button
+            var btnSimBookReturn = new Button
             {
                 Text = "Симулировать книгу (ОК)",
                 Size = new System.Drawing.Size(240, 48),
@@ -259,12 +275,6 @@ namespace LibraryTerminal
             };
             bFull.Click += (s, e) => OnBookTagReturn("SIM_BOOK_FULL");
             panelScanBookReturn.Controls.Add(bFull);
-
-            // гарантируем, что кнопки поверх
-            btnSimCardTake.BringToFront();
-            btnSimCardReturn.BringToFront();
-            btnSimBookTake.BringToFront();
-            btnSimBookReturn.BringToFront();
         }
 
         protected override void OnFormClosing(FormClosingEventArgs e)
@@ -288,7 +298,7 @@ namespace LibraryTerminal
             if (keyData == Keys.D2) { OnBookTagTake("SIM_BOOK_OK"); return true; }
             if (keyData == Keys.D3) { OnBookTagTake("SIM_BOOK_BAD"); return true; }
             if (keyData == Keys.D4) { OnBookTagReturn("SIM_BOOK_FULL"); return true; }
-            if (keyData == Keys.F9) { TestIrbisConnection(); return true; }
+            if (keyData == Keys.F9) { _ = TestIrbisConnectionAsync(); return true; }
 
             return base.ProcessCmdKey(ref msg, keyData);
         }
@@ -348,9 +358,23 @@ namespace LibraryTerminal
         private void OnCardUid(string uid)
         {
             if (InvokeRequired) { BeginInvoke(new Action<string>(OnCardUid), uid); return; }
+            _ = OnCardUid_ImplAsync(uid); // fire-and-forget
+        }
 
-            bool ok = SIM_MODE ? true : (_svc?.ValidateCard(uid) ?? false);
-          
+        private async Task OnCardUid_ImplAsync(string uid)
+        {
+            bool ok = SIM_MODE;
+            if (!ok)
+            {
+                try
+                {
+                    ok = (_svc != null) && await OffUi(() => _svc.ValidateCard(uid));
+                } catch
+                {
+                    ok = false; // не роняем форму
+                }
+            }
+
             if (!ok)
             {
                 Switch(Screen.S8_CardFail, panelError, TIMEOUT_SEC_ERROR);
@@ -363,31 +387,36 @@ namespace LibraryTerminal
                 Switch(Screen.S5_WaitBookReturn, panelScanBookReturn);
         }
 
-        private bool CheckReader(string uid) => !string.IsNullOrWhiteSpace(uid);
-
         // ===== Считывание книги (2 ридера) =====
         private void OnBookTagTake(string tag)
         {
             if (InvokeRequired) { BeginInvoke(new Action<string>(OnBookTagTake), tag); return; }
-            if (_screen == Screen.S3_WaitBookTake) HandleTake(tag);
+            if (_screen == Screen.S3_WaitBookTake) _ = HandleTakeAsync(tag);
         }
 
         private void OnBookTagReturn(string tag)
         {
             if (InvokeRequired) { BeginInvoke(new Action<string>(OnBookTagReturn), tag); return; }
-            if (_screen == Screen.S5_WaitBookReturn) HandleReturn(tag);
+            if (_screen == Screen.S5_WaitBookReturn) _ = HandleReturnAsync(tag);
         }
 
         // запасной общий обработчик (если нужно)
         private void OnBookTag(string tag)
         {
             if (InvokeRequired) { BeginInvoke(new Action<string>(OnBookTag), tag); return; }
-            if (_screen == Screen.S3_WaitBookTake) HandleTake(tag);
-            else if (_screen == Screen.S5_WaitBookReturn) HandleReturn(tag);
+            if (_screen == Screen.S3_WaitBookTake) _ = HandleTakeAsync(tag);
+            else if (_screen == Screen.S5_WaitBookReturn) _ = HandleReturnAsync(tag);
         }
 
+        // Унифицированные обёртки Arduino — в фоне
+        private Task<bool> OpenBinAsync() =>
+            _ardu == null ? Task.FromResult(true) : OffUi(() => { _ardu.OpenBin(); return true; });
+
+        private Task<bool> HasSpaceAsync() =>
+            _ardu == null ? Task.FromResult(true) : OffUi(() => _ardu.HasSpace());
+
         // --- Выдача (3 -> 6/7/8) ---
-        private void HandleTake(string bookTag)
+        private async Task HandleTakeAsync(string bookTag)
         {
             try
             {
@@ -398,13 +427,13 @@ namespace LibraryTerminal
                         Switch(Screen.S7_BookRejected, panelNoTag, TIMEOUT_SEC_NO_TAG);
                         return;
                     }
-                    _ardu?.OpenBin();
+                    await OpenBinAsync();
                     lblSuccess.Text = "Книга выдана";
                     Switch(Screen.S6_Success, panelSuccess, TIMEOUT_SEC_SUCCESS);
                     return;
                 }
 
-                var records = _svc.FindByInvOrTag(bookTag);
+                var records = await OffUi(() => _svc.FindByInvOrTag(bookTag));
                 if (records == null || records.Length == 0)
                 {
                     Switch(Screen.S7_BookRejected, panelNoTag, TIMEOUT_SEC_NO_TAG);
@@ -412,7 +441,7 @@ namespace LibraryTerminal
                 }
 
                 var rec = records[0];
-                var byTag = _svc.Find910ByTag(rec, bookTag);
+                var byTag = await OffUi(() => _svc.Find910ByTag(rec, bookTag));
                 if (byTag == null || byTag.Length == 0)
                 {
                     Switch(Screen.S7_BookRejected, panelNoTag, TIMEOUT_SEC_NO_TAG);
@@ -428,15 +457,16 @@ namespace LibraryTerminal
                     return;
                 }
 
-                _ardu?.OpenBin();
+                await OpenBinAsync();
 
-                _svc.Set910StatusAndWrite(
-                    record: rec,
-                    newStatus: STATUS_ISSUED,
-                    inventory: null,
-                    tag: bookTag,
-                    place: null,
-                    actualize: true);
+                await OffUi(() =>
+                    _svc.Set910StatusAndWrite(
+                        record: rec,
+                        newStatus: STATUS_ISSUED,
+                        inventory: null,
+                        tag: bookTag,
+                        place: null,
+                        actualize: true));
 
                 lblSuccess.Text = "Книга выдана";
                 Switch(Screen.S6_Success, panelSuccess, TIMEOUT_SEC_SUCCESS);
@@ -447,7 +477,7 @@ namespace LibraryTerminal
         }
 
         // --- Возврат (5 -> 6/7/9) ---
-        private void HandleReturn(string bookTag)
+        private async Task HandleReturnAsync(string bookTag)
         {
             try
             {
@@ -466,13 +496,13 @@ namespace LibraryTerminal
                         Switch(Screen.S9_NoSpace, panelOverflow, TIMEOUT_SEC_NO_SPACE);
                         return;
                     }
-                    _ardu?.OpenBin();
+                    await OpenBinAsync();
                     lblSuccess.Text = "Книга принята";
                     Switch(Screen.S6_Success, panelSuccess, TIMEOUT_SEC_SUCCESS);
                     return;
                 }
 
-                var records = _svc.FindByInvOrTag(bookTag);
+                var records = await OffUi(() => _svc.FindByInvOrTag(bookTag));
                 if (records == null || records.Length == 0)
                 {
                     Switch(Screen.S7_BookRejected, panelNoTag);
@@ -482,7 +512,7 @@ namespace LibraryTerminal
                     return;
                 }
 
-                bool hasSpace = _ardu != null ? _ardu.HasSpace() : true;
+                bool hasSpace = await HasSpaceAsync();
                 if (!hasSpace)
                 {
                     Switch(Screen.S9_NoSpace, panelOverflow, TIMEOUT_SEC_NO_SPACE);
@@ -490,9 +520,10 @@ namespace LibraryTerminal
                 }
 
                 var rec = records[0];
-                _svc.Set910StatusAndWrite(rec, STATUS_IN_STOCK, null, bookTag, null, true);
+                await OffUi(() =>
+                    _svc.Set910StatusAndWrite(rec, STATUS_IN_STOCK, null, bookTag, null, true));
 
-                _ardu?.OpenBin();
+                await OpenBinAsync();
                 lblSuccess.Text = "Книга принята";
                 Switch(Screen.S6_Success, panelSuccess, TIMEOUT_SEC_SUCCESS);
             } catch (Exception ex)

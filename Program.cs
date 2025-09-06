@@ -1,6 +1,7 @@
-// Program.cs — точка входа в приложение
 using System;
+using System.IO;
 using System.Windows.Forms;
+
 
 namespace LibraryTerminal
 {
@@ -11,7 +12,9 @@ namespace LibraryTerminal
         {
             Application.EnableVisualStyles();
             Application.SetCompatibleTextRenderingDefault(false);
-            Application.Run(new MainForm());
+            Application.Run(new MainForm()); // <- этот тип должен существовать и быть public
         }
     }
 }
+
+
