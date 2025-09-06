@@ -1,275 +1,314 @@
 ﻿using System;
-using System.Configuration;
 using System.Collections.Generic;
 using System.Linq;
-using ManagedClient; // IrbisRecord, RecordField, ManagedClient64
+using System.Threading;
 
-namespace LibraryTerminal
+namespace Rfid.Library.Integration
 {
-    public class IrbisServiceManaged : IDisposable
+    public sealed class IrbisServiceManaged : IDisposable
     {
-        private ManagedClient64 _client;
+        // ==== Зависимости и конфигурация ======================================
+        private readonly IIrbisClient _client;             // клиент IRBIS
+        private readonly ILogger _log;                      // логгер
+        private readonly Config _cfg;                       // конфигурация
+
+        // Опционально: синхронизация доступа, если сервис используется из разных потоков
+        private readonly SemaphoreSlim _mutex = new SemaphoreSlim(1, 1);
+        private bool _disposed;
+
+        // Текущая БД (для информации, выбор БД управляется через Push/Pop)
         private string _currentDb;
 
-        public bool IsConnected {
-            get {
-                try { return _client != null && _client.Connected; } catch { return false; }
+        public IrbisServiceManaged(IIrbisClient client, ILogger log, Config cfg)
+        {
+            if (client == null) throw new ArgumentNullException("client");
+            if (log == null) throw new ArgumentNullException("log");
+            if (cfg == null) throw new ArgumentNullException("cfg");
+
+            _client = client;
+            _log = log;
+            _cfg = cfg;
+        }
+
+        // ==== Конфигурация =====================================================
+        public sealed class Config
+        {
+            public Config()
+            {
+                // Значения по умолчанию (инициализаторы авто-свойств в C# 5 недоступны)
+                ReadersDb = "RDR";      // база читателей
+                BooksDb = "IBIS";       // база книг
+
+                ReaderCardSearchExpr = "RI={0}"; // поиск по RFID-UID читателя
+                BookByTagSearchExpr = "IN={0}"; // поиск книги по RFID-метке (подполе h)
+                BookByInvSearchExpr = "I={0}";  // поиск книги по инвентарному номеру (подполе b)
+
+                BookStatusField = 910;
+                StatusCodeSubfield = 'a';
+                InventorySubfield = 'b';
+                PlaceSubfield = 'd';
+                TagSubfield = 'h';
+
+                UseWhitelist = false;
+                Whitelist = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                AllowAllOnEmptyWhitelist = false; // в проде лучше false
+
+                ConnectionString = null;
+            }
+
+            // Названия баз
+            public string ReadersDb { get; set; }
+            public string BooksDb { get; set; }
+
+            // Шаблоны поисковых выражений
+            public string ReaderCardSearchExpr { get; set; }
+            public string BookByTagSearchExpr { get; set; }
+            public string BookByInvSearchExpr { get; set; }
+
+            // Настройка поля 910 (экземпляры)
+            public int BookStatusField { get; set; }
+            public char StatusCodeSubfield { get; set; }
+            public char InventorySubfield { get; set; }
+            public char PlaceSubfield { get; set; }
+            public char TagSubfield { get; set; }
+
+            // Поведение валидации карт
+            public bool UseWhitelist { get; set; }
+            public HashSet<string> Whitelist { get; set; }
+            public bool AllowAllOnEmptyWhitelist { get; set; }
+
+            // Подключение
+            public string ConnectionString { get; set; }
+        }
+
+        // Простой интерфейс логгера
+        public interface ILogger
+        {
+            void Info(string message);
+            void Warn(string message);
+            void Error(string message, Exception ex);
+            void Debug(string message);
+        }
+
+        // Минимальный интерфейс клиента IRBIS
+        public interface IIrbisClient : IDisposable
+        {
+            void Connect(string connectionString);
+            void Disconnect();
+
+            void PushDatabase(string dbName);
+            void PopDatabase();
+
+            void NoOp(); // проверка соединения
+
+            int[] Search(string irbisQuery);
+            IrbisRecord ReadRecord(int mfn);
+            void WriteRecord(IrbisRecord record, bool lockRecord, bool actualize);
+        }
+
+        // Запись IRBIS (упрощённо)
+        public sealed class IrbisRecord
+        {
+            public int Mfn { get; set; }
+            public List<Field> Fields { get; private set; }
+
+            public IrbisRecord()
+            {
+                Fields = new List<Field>();
+            }
+
+            public Field FM(int tag)
+            {
+                return Fields.FirstOrDefault(f => f.Tag == tag);
+            }
+            public IEnumerable<Field> FMs(int tag)
+            {
+                return Fields.Where(f => f.Tag == tag);
             }
         }
 
-        // =========================
-        //   БАЗОВЫЕ ОПЕРАЦИИ
-        // =========================
-
-        public bool Connect(string conn)
+        public sealed class Field
         {
-            try
-            {
-                _client = new ManagedClient64 { Timeout = 20000 };
-                _client.ParseConnectionString(conn);
-                _client.Connect();
+            public int Tag { get; set; }
+            public List<SubField> SubFields { get; private set; }
 
-                // если в строке был DB=..., выберем её
-                var parts = conn.Split(new[] { ';' }, StringSplitOptions.RemoveEmptyEntries);
-                for (int i = 0; i < parts.Length; i++)
-                {
-                    var p = parts[i].Trim();
-                    if (p.StartsWith("DB=", StringComparison.OrdinalIgnoreCase))
-                    {
-                        UseDatabase(p.Substring(3));
-                        break;
-                    }
-                }
-                return true;
-            } catch
+            public Field()
             {
+                SubFields = new List<SubField>();
+            }
+
+            public string Get(char code)
+            {
+                var sf = SubFields.FirstOrDefault(s => s.Code == code);
+                return sf != null ? sf.Value : null;
+            }
+            public SubField Ensure(char code)
+            {
+                var sf = SubFields.FirstOrDefault(x => x.Code == code);
+                if (sf == null)
+                {
+                    sf = new SubField { Code = code, Value = string.Empty };
+                    SubFields.Add(sf);
+                }
+                return sf;
+            }
+        }
+
+        public sealed class SubField { public char Code; public string Value; }
+
+        // ==== Подключение и проверка ===========================================
+        public void Connect()
+        {
+            if (string.IsNullOrWhiteSpace(_cfg.ConnectionString))
+                throw new InvalidOperationException("ConnectionString не задан");
+
+            _log.Info("Подключение к IRBIS...");
+            _client.Connect(_cfg.ConnectionString);
+            _client.NoOp();
+            _currentDb = null;
+            _log.Info("Подключено.");
+        }
+
+        public void Disconnect()
+        {
+            _log.Info("Отключение от IRBIS...");
+            _client.Disconnect();
+            _log.Info("Отключено.");
+        }
+
+        // ==== Поиск книг =======================================================
+        public IrbisRecord FindBookByRfidTag(string tag)
+        {
+            return FindOneInDb(_cfg.BooksDb, string.Format(_cfg.BookByTagSearchExpr, Escape(tag)));
+        }
+
+        public IrbisRecord FindBookByInventory(string inventory)
+        {
+            return FindOneInDb(_cfg.BooksDb, string.Format(_cfg.BookByInvSearchExpr, Escape(inventory)));
+        }
+
+        // ==== Обновление статуса экземпляра (поле 910) =========================
+        public bool Set910StatusByTag(IrbisRecord record, string tagValue, string newStatus, string newPlace)
+        {
+            if (record == null) throw new ArgumentNullException("record");
+            if (string.IsNullOrWhiteSpace(tagValue)) throw new ArgumentException("Пустой tagValue", "tagValue");
+
+            var target910 = record.FMs(_cfg.BookStatusField)
+                .FirstOrDefault(f => string.Equals(f.Get(_cfg.TagSubfield), tagValue, StringComparison.OrdinalIgnoreCase));
+
+            if (target910 == null)
+            {
+                _log.Warn(string.Format("910 с h={0} не найден (MFN={1}).", tagValue, record.Mfn));
                 return false;
             }
+
+            target910.Ensure(_cfg.StatusCodeSubfield).Value = newStatus;
+            if (!string.IsNullOrWhiteSpace(newPlace))
+                target910.Ensure(_cfg.PlaceSubfield).Value = newPlace;
+
+            return WriteRecordSafe(record);
         }
 
-        public bool UseDatabase(string db)
+        // ==== Валидация карты ==================================================
+        public bool ValidateCard(string rawUid)
         {
-            if (!IsConnected) return false;
-            try { _client.PopDatabase(); } catch { /* пустой стек допустим */ }
+            var uid = NormalizeUid(rawUid);
+            if (string.IsNullOrEmpty(uid))
+            {
+                _log.Warn("UID карты пуст после нормализации.");
+                return false;
+            }
 
+            if (_cfg.UseWhitelist)
+            {
+                if (_cfg.Whitelist.Count == 0)
+                {
+                    _log.Warn("Whitelist пуст.");
+                    return _cfg.AllowAllOnEmptyWhitelist;
+                }
+                return _cfg.Whitelist.Contains(uid);
+            }
+
+            var query = string.Format(_cfg.ReaderCardSearchExpr, Escape(uid));
+            var rec = FindOneInDb(_cfg.ReadersDb, query);
+            return rec != null;
+        }
+
+        // ==== Внутренние методы ===============================================
+        private IrbisRecord FindOneInDb(string db, string query)
+        {
+            _mutex.Wait();
             try
             {
                 _client.PushDatabase(db);
-                _currentDb = db;
-
-                var max = _client.GetMaxMfn();
-                return max > 0;
-            } catch
-            {
-                return false;
-            }
-        }
-
-        public bool Ping()
-        {
-            if (!IsConnected) return false;
-            try
-            {
-                _client.NoOp();
-                var max = _client.GetMaxMfn();
-                return max >= 0;
-            } catch
-            {
-                return false;
-            }
-        }
-
-        // =========================
-        //   ПОИСК КНИГ
-        // =========================
-
-        public IrbisRecord FindOneByInvOrTag(string value)
-        {
-            if (!IsConnected) return null;
-            if (string.IsNullOrWhiteSpace(value)) return null;
-
-            try
-            {
-                var rec = _client.SearchReadOneRecord("\"I={0}\"", value);
-                if (rec != null) return rec;
-
-                rec = _client.SearchReadOneRecord("\"IN={0}\"", value);
-                return rec;
-            } catch
-            {
-                return null;
-            }
-        }
-
-        public IrbisRecord[] FindByInvOrTag(string value)
-        {
-            var one = FindOneByInvOrTag(value);
-            return one != null ? new[] { one } : new IrbisRecord[0];
-        }
-
-        public RecordField[] Read910(IrbisRecord record)
-        {
-            if (record == null) return new RecordField[0];
-            try { return record.Fields.GetField("910").ToArray(); } catch { return new RecordField[0]; }
-        }
-
-        public RecordField[] Find910ByTag(IrbisRecord record, string tag)
-        {
-            if (record == null || string.IsNullOrEmpty(tag)) return new RecordField[0];
-            try
-            {
-                return record.Fields.GetField("910").GetField('h', tag).ToArray();
-            } catch
-            {
-                return new RecordField[0];
-            }
-        }
-
-        public RecordField[] FindAvailable910ByTag(IrbisRecord record, string tag)
-        {
-            if (record == null || string.IsNullOrEmpty(tag)) return new RecordField[0];
-            try
-            {
-                return record.Fields.GetField("910")
-                                    .GetField('h', tag)
-                                    .GetField('a', "0")
-                                    .ToArray();
-            } catch
-            {
-                return new RecordField[0];
-            }
-        }
-
-        public bool Set910StatusAndWrite(
-            IrbisRecord record,
-            string newStatus,
-            string inventory,
-            string tag,
-            string place,
-            bool actualize)
-        {
-            if (!IsConnected) return false;
-            if (record == null) return false;
-
-            try
-            {
-                RecordField target = null;
-
-                if (!string.IsNullOrEmpty(tag))
-                {
-                    var arrH = record.Fields.GetField("910").GetField('h', tag).ToArray();
-                    if (arrH.Length > 0) target = arrH[0];
-                }
-
-                if (target == null && !string.IsNullOrEmpty(inventory))
-                {
-                    var arrB = record.Fields.GetField("910").GetField('b', inventory).ToArray();
-                    if (arrB.Length > 0) target = arrB[0];
-                }
-
-                if (target == null)
-                {
-                    var all910 = record.Fields.GetField("910").ToArray();
-                    if (all910.Length > 0) target = all910[0];
-                }
-
-                if (target == null) return false;
-
-                target.ReplaceSubField('a', newStatus, true);
-                if (!string.IsNullOrEmpty(place))
-                    target.ReplaceSubField('d', place, true);
-
-                _client.WriteRecord(record, false, true);
-
-                if (actualize)
-                {
-                    var fresh = _client.ReadRecord(record.Mfn);
-                    record.Fields.Clear();
-                    record.Fields.AddRange(fresh.Fields);
-                }
-                return true;
-            } catch
-            {
-                return false;
-            }
-        }
-
-        // =========================
-        //   АВТОРИЗАЦИЯ ПО КАРТЕ
-        // =========================
-
-        public bool ValidateCard(string uid)
-        {
-            if (string.IsNullOrWhiteSpace(uid)) return false;
-            // не роняем приложение, если нет связи: просто «не авторизован»
-            if (!IsConnected) return false;
-
-            // нормализуем UID
-            try { uid = new string(uid.Trim().Where(char.IsLetterOrDigit).ToArray()); } catch { return false; }
-
-            var mode = (ConfigurationManager.AppSettings["AuthMode"] ?? "Whitelist").Trim();
-
-            if (mode.Equals("Whitelist", StringComparison.OrdinalIgnoreCase))
-            {
-                var csv = ConfigurationManager.AppSettings["AllowedCards"] ?? "";
-                var parts = csv
-                    .Split(new[] { ',', ';', ' ', '\t', '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries)
-                    .Select(s => s.Trim())
-                    .Where(s => s.Length > 0)
-                    .ToList();
-
-                if (parts.Count == 0) return true; // на стенде — пустой список = пускаем всех
-
-                var set = new HashSet<string>(parts, StringComparer.OrdinalIgnoreCase);
-                return set.Contains(uid);
-            }
-            else // Irbis
-            {
-                var rdrDb = ConfigurationManager.AppSettings["ReadersDb"] ?? "RDR";
-                var pattern = ConfigurationManager.AppSettings["CardSearchExpr"] ?? "\"RFID={0}\"";
-
                 try
                 {
-                    _client.PushDatabase(rdrDb);
-                    try
-                    {
-                        var rec = _client.SearchReadOneRecord(pattern, uid);
-                        return rec != null;
-                    }
-                    finally
-                    {
-                        _client.PopDatabase();
-                        if (!string.IsNullOrEmpty(_currentDb))
-                        {
-                            try { _client.PushDatabase(_currentDb); } catch { }
-                        }
-                    }
-                } catch
-                {
-                    return false;
+                    _log.Debug(string.Format("Поиск в БД '{0}': {1}", db, query));
+                    var mfns = _client.Search(query);
+                    if (mfns == null || mfns.Length == 0) return null;
+                    if (mfns.Length > 1)
+                        _log.Warn(string.Format("Поиск вернул {0} записей; берём первую.", mfns.Length));
+
+                    return _client.ReadRecord(mfns[0]);
                 }
+                finally
+                {
+                    _client.PopDatabase();
+                }
+            } catch (Exception ex)
+            {
+                _log.Error(string.Format("FindOneInDb неудачно (db={0}).", db), ex);
+                return null;
+            }
+            finally
+            {
+                _mutex.Release();
             }
         }
 
-        // =========================
-        //   ЖИЗНЕННЫЙ ЦИКЛ
-        // =========================
-
-        public void Dispose()
+        private bool WriteRecordSafe(IrbisRecord record)
         {
+            _mutex.Wait();
             try
             {
-                if (_client != null)
-                {
-                    try { _client.Disconnect(); } catch { }
-                    _client.Dispose();
-                }
-            } catch { }
+                _client.WriteRecord(record, true, true); // блокировка и актуализация
+                return true;
+            } catch (Exception ex)
+            {
+                _log.Error(string.Format("WriteRecord неудачно (MFN={0}).", record != null ? record.Mfn.ToString() : "null"), ex);
+                return false;
+            }
             finally
             {
-                _client = null;
-                _currentDb = null;
+                _mutex.Release();
             }
+        }
+
+        private static string NormalizeUid(string raw)
+        {
+            if (string.IsNullOrWhiteSpace(raw)) return string.Empty;
+            var trimmed = raw.Trim().ToUpperInvariant();
+            var chars = new List<char>(trimmed.Length);
+            for (int i = 0; i < trimmed.Length; i++)
+            {
+                char ch = trimmed[i];
+                if (ch != ' ' && ch != ':' && ch != '-') chars.Add(ch);
+            }
+            return new string(chars.ToArray());
+        }
+
+        private static string Escape(string value)
+        {
+            return value == null ? string.Empty : value.Replace("\"", "\\\"");
+        }
+
+        // ==== Освобождение ресурсов ============================================
+        public void Dispose()
+        {
+            if (_disposed) return;
+            _disposed = true;
+            try { if (_client != null) _client.Dispose(); } catch { }
+            _mutex.Dispose();
         }
     }
 }
