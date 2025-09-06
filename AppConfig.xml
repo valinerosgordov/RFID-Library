@@ -1,17 +1,49 @@
-﻿<?xml version="1.0" encoding="utf-8" ?>
+﻿<?xml version="1.0" encoding="utf-8"?>
 <configuration>
   <appSettings>
-    <appSettings>
-      <add key="BookTakePort"   value="COM5"/>
-      <add key="BaudBookTake"   value="9600"/>
-      <add key="NewLineBookTake" value="\r\n"/>
 
+    <!-- === ПОРТЫ === -->
+    <!-- Карта -->
+    <add key="CardPort" value="COM5"/>
 
-      <add key="ReadTimeoutMs"   value="700"/>
-      <add key="WriteTimeoutMs"  value="700"/>
-      <add key="AutoReconnectMs" value="1500"/>
-      <add key="DebounceMs"      value="500"/>
-    </appSettings>
+    <!-- Книга (выдача) -->
+    <add key="BookTakePort" value="COM6"/>
+
+    <!-- Книга (возврат). Если тот же ридер — оставь такой же порт -->
+    <add key="BookReturnPort" value="COM6"/>
+
+    <!-- Arduino (если подключён) -->
+    <add key="ArduinoPort" value="COM7"/>
+
+    <!-- === СКОРОСТИ === -->
+    <add key="BaudCard" value="9600"/>
+    <add key="BaudBookTake" value="9600"/>
+    <add key="BaudBookReturn" value="9600"/>
+    <add key="BaudArduino" value="115200"/>
+
+    <!-- === Перевод строки (должен совпадать с устройствами) === -->
+    <!-- Для большинства ридеров CRLF (\r\n) -->
+    <add key="NewLineCard" value="&#13;&#10;"/>
+    <add key="NewLineBookTake" value="&#13;&#10;"/>
+    <add key="NewLineBookReturn" value="&#13;&#10;"/>
+    <!-- Для Arduino обычно LF (\n) -->
+    <add key="NewLineArduino" value="&#10;"/>
+
+    <!-- === Таймауты и поведение COM === -->
+    <add key="ReadTimeoutMs" value="700"/>
+    <add key="WriteTimeoutMs" value="700"/>
+    <add key="AutoReconnectMs" value="1500"/>
+    <add key="DebounceMs" value="250"/>
+
+    <!-- === Авторизация по карте (можно оставить Whitelist на стенде) === -->
+    <add key="AuthMode" value="Whitelist"/>
+    <!-- или Irbis -->
+    <add key="AllowedCards" value="SIM_CARD, 04AABBCCDD"/>
+    <!-- для стенда -->
+
+    <!-- Для режима Irbis -->
+    <add key="ReadersDb" value="RDR"/>
+    <add key="CardSearchExpr" value="&quot;RFID={0}&quot;"/>
 
   </appSettings>
 </configuration>

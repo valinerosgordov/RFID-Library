@@ -1,7 +1,9 @@
 ﻿using System;
+using System.Configuration;
+using System.Collections.Generic;
 using System.Linq;
 
-using ManagedClient;
+using ManagedClient; // IrbisRecord, RecordField, ManagedClient64
 
 namespace LibraryTerminal
 {
@@ -9,6 +11,10 @@ namespace LibraryTerminal
     {
         private ManagedClient64 _client;
         private string _currentDb;
+
+        // =========================
+        //   БАЗОВЫЕ ОПЕРАЦИИ
+        // =========================
 
         public void Connect(string conn)
         {
@@ -32,7 +38,10 @@ namespace LibraryTerminal
         public void UseDatabase(string db)
         {
             if (_client == null) throw new InvalidOperationException("IRBIS не подключён");
+
+            // постараемся вернуть предыдущую БД (если была), игнорируя ошибки
             try { _client.PopDatabase(); } catch { }
+
             _client.PushDatabase(db);
             _currentDb = db;
 
@@ -48,9 +57,10 @@ namespace LibraryTerminal
             if (max < 0) throw new Exception("IRBIS вернул некорректный MaxMfn");
         }
 
-        /// <summary>
-        /// Найти ОДНУ запись по шифру (I=...) или по инв./метке (IN=...).
-        /// </summary>
+        // =========================
+        //   ПОИСК КНИГ
+        // =========================
+
         public IrbisRecord FindOneByInvOrTag(string value)
         {
             if (_client == null) throw new InvalidOperationException("IRBIS не подключён");
@@ -65,27 +75,19 @@ namespace LibraryTerminal
             return rec; // может быть null — это нормально
         }
 
-        /// <summary>
-        /// Старый совместимый метод: вернёт массив (0 или 1 запись).
-        /// </summary>
         public IrbisRecord[] FindByInvOrTag(string value)
         {
             var one = FindOneByInvOrTag(value);
             return one != null ? new[] { one } : new IrbisRecord[0];
         }
 
-        /// <summary>
-        /// Все повторения поля 910.
-        /// </summary>
         public RecordField[] Read910(IrbisRecord record)
         {
             if (record == null) return new RecordField[0];
             return record.Fields.GetField("910").ToArray();
         }
 
-        /// <summary>
-        /// Повторения 910 с конкретной радиометкой (^h = tag).
-        /// </summary>
+        /// <summary>Повторения 910 с конкретной радиометкой (^h = tag).</summary>
         public RecordField[] Find910ByTag(IrbisRecord record, string tag)
         {
             if (record == null || string.IsNullOrEmpty(tag)) return new RecordField[0];
@@ -95,9 +97,7 @@ namespace LibraryTerminal
                          .ToArray();
         }
 
-        /// <summary>
-        /// Доступные к выдаче экземпляры: 910 с ^h = tag и ^a = "0".
-        /// </summary>
+        /// <summary>Доступные к выдаче: 910 с ^h = tag и ^a = "0".</summary>
         public RecordField[] FindAvailable910ByTag(IrbisRecord record, string tag)
         {
             if (record == null || string.IsNullOrEmpty(tag)) return new RecordField[0];
@@ -128,26 +128,26 @@ namespace LibraryTerminal
             if (!string.IsNullOrEmpty(tag))
             {
                 // 910 с ^h=tag (первое совпадение)
-                var arr = record.Fields
-                                .GetField("910")
-                                .GetField('h', tag)
-                                .ToArray();
-                if (arr.Length > 0) target = arr[0];
+                var arrH = record.Fields
+                                 .GetField("910")
+                                 .GetField('h', tag)
+                                 .ToArray();
+                if (arrH.Length > 0) target = arrH[0];
             }
 
             if (target == null && !string.IsNullOrEmpty(inventory))
             {
                 // 910 с ^b=inventory
-                var arr = record.Fields
-                                .GetField("910")
-                                .GetField('b', inventory)
-                                .ToArray();
-                if (arr.Length > 0) target = arr[0];
+                var arrB = record.Fields
+                                 .GetField("910")
+                                 .GetField('b', inventory)
+                                 .ToArray();
+                if (arrB.Length > 0) target = arrB[0];
             }
 
             if (target == null)
             {
-                // fallback: возьмём первый 910 (на крайний случай)
+                // fallback: первый 910
                 var all910 = record.Fields.GetField("910").ToArray();
                 if (all910.Length > 0) target = all910[0];
             }
@@ -158,7 +158,7 @@ namespace LibraryTerminal
             // меняем 910^a
             target.ReplaceSubField('a', newStatus, true);
 
-            // по необходимости — место хранения ^d
+            // при необходимости — место хранения ^d
             if (!string.IsNullOrEmpty(place))
                 target.ReplaceSubField('d', place, true);
 
@@ -167,12 +167,76 @@ namespace LibraryTerminal
 
             if (actualize)
             {
-                // перечитаем и обновим коллекцию полей (без присвоения)
+                // перечитаем свежую версию и обновим поля в переданном объекте
                 var fresh = _client.ReadRecord(record.Mfn);
                 record.Fields.Clear();
                 record.Fields.AddRange(fresh.Fields);
             }
         }
+
+        // =========================
+        //   АВТОРИЗАЦИЯ ПО КАРТЕ
+        // =========================
+
+        /// <summary>
+        /// true, если UID карты разрешён (Whitelist) или найден в БД читателей (Irbis).
+        /// </summary>
+        public bool ValidateCard(string uid)
+        {
+            if (_client == null) throw new InvalidOperationException("IRBIS не подключён");
+            if (string.IsNullOrWhiteSpace(uid)) return false;
+
+            // нормализуем UID (оставим только буквы/цифры)
+            uid = new string(uid.Trim().Where(char.IsLetterOrDigit).ToArray());
+
+            // Режим авторизации: Whitelist или Irbis
+            var mode = (ConfigurationManager.AppSettings["AuthMode"] ?? "Whitelist").Trim();
+
+            if (mode.Equals("Whitelist", StringComparison.OrdinalIgnoreCase))
+            {
+                var csv = ConfigurationManager.AppSettings["AllowedCards"] ?? "";
+
+                // разберём CSV в список
+                var parts = csv
+                    .Split(new[] { ',', ';', ' ', '\t', '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries)
+                    .Select(s => s.Trim())
+                    .Where(s => s.Length > 0)
+                    .ToList();
+
+                // если список пуст — разрешаем всех (для стенда)
+                if (parts.Count == 0) return true;
+
+                // используем HashSet вместо ToHashSet()
+                var set = new HashSet<string>(parts, StringComparer.OrdinalIgnoreCase);
+                return set.Contains(uid);
+            }
+            else // Irbis
+            {
+                var rdrDb = ConfigurationManager.AppSettings["ReadersDb"] ?? "RDR";
+                var pattern = ConfigurationManager.AppSettings["CardSearchExpr"] ?? "\"RFID={0}\"";
+
+                // аккуратно переключимся в БД читателей
+                _client.PushDatabase(rdrDb);
+                try
+                {
+                    var rec = _client.SearchReadOneRecord(pattern, uid);
+                    return rec != null;
+                }
+                finally
+                {
+                    // вернёмся в предыдущую БД
+                    _client.PopDatabase();
+                    if (!string.IsNullOrEmpty(_currentDb))
+                    {
+                        try { _client.PushDatabase(_currentDb); } catch { }
+                    }
+                }
+            }
+        }
+
+        // =========================
+        //   ЖИЗНЕННЫЙ ЦИКЛ
+        // =========================
 
         public void Dispose()
         {
@@ -183,8 +247,7 @@ namespace LibraryTerminal
                     try { _client.Disconnect(); } catch { }
                     _client.Dispose();
                 }
-            }
-            catch { }
+            } catch { }
             finally
             {
                 _client = null;

@@ -1,6 +1,7 @@
 using System;
 using System.Configuration;
 using System.Linq;
+using System.Threading.Tasks;
 using System.Windows.Forms;
 
 namespace LibraryTerminal
@@ -37,8 +38,8 @@ namespace LibraryTerminal
 
         // === Режимы ===
         private static readonly bool SIM_MODE = false; // железо активно
-        private const bool DEMO_UI = true;            // показывать демо-кнопки на экранах
-        private const bool DEMO_KEYS = true;            // горячие клавиши 1–4, F9
+        private const bool DEMO_UI = true;             // показывать демо-кнопки на экранах
+        private const bool DEMO_KEYS = true;           // горячие клавиши 1–4, F9
 
         // ===== Статусы 910^a (пример) =====
         private const string STATUS_IN_STOCK = "0"; // в фонде (можно выдавать)
@@ -49,30 +50,70 @@ namespace LibraryTerminal
         private CardReaderSerial _card;        // карта
         private BookReaderSerial _bookTake;    // книга (выдача)
         private BookReaderSerial _bookReturn;  // книга (возврат)
-        private ArduinoClientSerial _ardu;        // контроллер шкафа/места
+        private ArduinoClientSerial _ardu;     // контроллер шкафа/места
 
         public MainForm()
         {
             InitializeComponent();
         }
 
-        // Тест IRBIS
+        // === Автоконнект к ИРБИС после показа окна + автотест ===
+        protected override async void OnShown(EventArgs e)
+        {
+            base.OnShown(e);
+            await InitIrbisWithRetry(); // подключение с ретраями
+            TestIrbisConnection();      // автозапуск теста
+        }
+
+        private async Task InitIrbisWithRetry()
+        {
+            if (SIM_MODE) { _svc = new IrbisServiceManaged(); return; }
+
+            string conn = "host=127.0.0.1;port=6666;user=MASTER;password=MASTERKEY;DB=IBIS;";
+            _svc = new IrbisServiceManaged();
+            Exception last = null;
+
+            for (int i = 0; i < 5; i++)
+            {
+                try
+                {
+                    _svc.Connect(conn);
+                    _svc.UseDatabase("IBIS"); // проверим доступность
+                    return;
+                } catch (Exception ex)
+                {
+                    last = ex;
+                    await Task.Delay(1500);
+                }
+            }
+
+            MessageBox.Show("Ошибка подключения к ИРБИС: " + (last?.Message ?? "неизвестно"),
+                "IRBIS", MessageBoxButtons.OK, MessageBoxIcon.Error);
+        }
+
+        // Тест IRBIS (раньше был по F9 — теперь ещё и запускается автоматически в OnShown)
         private void TestIrbisConnection()
         {
             try
             {
                 if (_svc == null)
-                    throw new Exception("Сервис IRBIS не инициализирован.");
+                    _svc = new IrbisServiceManaged();
 
-                string probe = Guid.NewGuid().ToString("N");
-                try { _svc.UseDatabase("IBIS"); } catch { }
+                // лёгкая «проверка-живости»
+                try { _svc.UseDatabase("IBIS"); } catch
+                {
+                    _svc.Connect("host=127.0.0.1;port=6666;user=MASTER;password=MASTERKEY;DB=IBIS;");
+                    _svc.UseDatabase("IBIS");
+                }
 
-                var _ = _svc.FindByInvOrTag(probe);
+                var probe = Guid.NewGuid().ToString("N");
+                _svc.FindByInvOrTag(probe);
+
                 MessageBox.Show("IRBIS: подключение OK", "IRBIS",
                     MessageBoxButtons.OK, MessageBoxIcon.Information);
             } catch (Exception ex)
             {
-                MessageBox.Show("IRBIS: ошибка подключения\n" + ex.Message, "IRBIS",
+                MessageBox.Show("IRBIS: " + ex.Message, "IRBIS",
                     MessageBoxButtons.OK, MessageBoxIcon.Error);
             }
         }
@@ -91,19 +132,6 @@ namespace LibraryTerminal
             if (DEMO_UI) AddBackButtonForSim();
 
             ShowScreen(panelMenu);
-
-            // --- IRBIS ---
-            _svc = new IrbisServiceManaged();
-            try
-            {
-                _svc.Connect("host=127.0.0.1;port=6666;user=MASTER;password=MASTERKEY;DB=IBIS;");
-                _svc.UseDatabase("IBIS");
-            } catch (Exception ex)
-            {
-                if (!SIM_MODE)
-                    MessageBox.Show("Ошибка подключения к ИРБИС: " + ex.Message, "IRBIS",
-                        MessageBoxButtons.OK, MessageBoxIcon.Error);
-            }
 
             // --- Оборудование ---
             if (!SIM_MODE)
@@ -162,7 +190,7 @@ namespace LibraryTerminal
                         MessageBoxButtons.OK, MessageBoxIcon.Warning);
                 }
             }
-        } // конец MainForm_Load
+        } 
 
         // ===== Симуляторы (демо-кнопки) =====
         private void AddSimButtons()
@@ -321,7 +349,8 @@ namespace LibraryTerminal
         {
             if (InvokeRequired) { BeginInvoke(new Action<string>(OnCardUid), uid); return; }
 
-            bool ok = SIM_MODE ? true : CheckReader(uid); // в демо карта всегда «валидна»
+            bool ok = SIM_MODE ? true : (_svc?.ValidateCard(uid) ?? false);
+          
             if (!ok)
             {
                 Switch(Screen.S8_CardFail, panelError, TIMEOUT_SEC_ERROR);
