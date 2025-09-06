@@ -179,7 +179,7 @@ namespace LibraryTerminal
             btnTestIrbis.Location = new System.Drawing.Point((800 - 200) / 2, 410);
             btnTestIrbis.Text = "Тест ИРБИС (F9)";
             btnTestIrbis.Font = new System.Drawing.Font("Segoe UI", 10F, System.Drawing.FontStyle.Regular);
-            btnTestIrbis.Click += (s, e) => this.TestIrbisConnection();
+            btnTestIrbis.Click += this.TestIrbisConnection;
             this.panelMenu.Controls.Add(btnTestIrbis);
         }
 

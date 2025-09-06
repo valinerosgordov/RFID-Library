@@ -19,3 +19,6 @@ C:\SideProjects\RFID-Library\obj\Build\LibraryTerminal.csproj.GenerateResource.c
 C:\SideProjects\RFID-Library\obj\Build\LibraryTerminal.csproj.CoreCompileInputs.cache
 C:\SideProjects\RFID-Library\obj\Build\LibraryTerminal.csproj.CopyComplete
 C:\SideProjects\RFID-Library\obj\Build\LibraryTerminal.exe
+C:\SideProjects\RFID-Library\bin\Build\PCSC.dll
+C:\SideProjects\RFID-Library\bin\Build\PCSC.pdb
+C:\SideProjects\RFID-Library\bin\Build\PCSC.xml
