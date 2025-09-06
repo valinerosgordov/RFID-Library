@@ -3,7 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
 
-namespace Rfid.Library.Integration
+namespace LibraryTerminal
 {
     public sealed class IrbisServiceManaged : IDisposable
     {
