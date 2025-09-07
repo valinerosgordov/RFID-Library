@@ -1,6 +1,6 @@
 using System;
 using System.Configuration;
-using System.Linq;                 // <— добавил
+using System.Linq;
 using System.Threading.Tasks;
 using System.Windows.Forms;
 
@@ -63,6 +63,21 @@ namespace LibraryTerminal
             InitializeComponent();
         }
 
+        // === Хелперы для подключения ===
+        private static string GetConnString()
+        {
+            // из app.config: <add key="ConnectionString" value="host=...;port=...;user=...;password=...;DB=IBIS;" />
+            var cfg = ConfigurationManager.AppSettings["ConnectionString"];
+            if (!string.IsNullOrWhiteSpace(cfg)) return cfg;
+
+            // запасной дефолт (как раньше)
+            return "host=127.0.0.1;port=6666;user=MASTER;password=MASTERKEY;DB=IBIS;";
+        }
+        private static string GetBooksDb()
+        {
+            return ConfigurationManager.AppSettings["BooksDb"] ?? "IBIS";
+        }
+
         // === Автоконнект к ИРБИС после показа окна + probe ===
         protected override async void OnShown(EventArgs e)
         {
@@ -71,13 +86,15 @@ namespace LibraryTerminal
             {
                 await InitIrbisWithRetryAsync();
                 await TestIrbisConnectionAsync();
-            } catch { /* не роняем UI */ }
+            } catch { /* не роням UI */ }
         }
 
         private async Task InitIrbisWithRetryAsync()
         {
             if (SIM_MODE) { _svc = new IrbisServiceManaged(); return; }
 
+            string conn = GetConnString();
+            string db = GetBooksDb();
             _svc = new IrbisServiceManaged();
             Exception last = null;
 
@@ -86,8 +103,8 @@ namespace LibraryTerminal
                 try
                 {
                     await OffUi(() => {
-                        // Новый API: без UseDatabase, достаточно Connect()
-                        _svc.Connect();
+                        _svc.Connect(conn);
+                        _svc.UseDatabase(db);
                     });
                     return; // успех
                 } catch (Exception ex)
@@ -105,16 +122,25 @@ namespace LibraryTerminal
         {
             try
             {
+                string conn = GetConnString();
+                string db = GetBooksDb();
+
                 if (_svc == null) _svc = new IrbisServiceManaged();
                 await OffUi(() => {
-                    try { _svc.Connect(); } // повторная Connect() — просто проверка живости
-                    catch
+                    try
                     {
-                        _svc.Connect();
+                        // быстрая проверка текущей сессии
+                        _svc.UseDatabase(db);
+                    } catch
+                    {
+                        // переподключение явной строкой + выбор БД
+                        _svc.Connect(conn);
+                        _svc.UseDatabase(db);
                     }
+
                     // Пробный запрос (любой несуществующий тег — нам важен сам вызов)
                     var probe = Guid.NewGuid().ToString("N");
-                    _svc.FindBookByRfidTag(probe);
+                    _svc.FindOneByInvOrTag(probe);
                 });
 
                 if (DEMO_UI)
@@ -385,7 +411,7 @@ namespace LibraryTerminal
                     return;
                 }
 
-                var rec = await OffUi(() => _svc.FindBookByRfidTag(bookTag));
+                var rec = await OffUi(() => _svc.FindOneByInvOrTag(bookTag));
                 if (rec == null)
                 {
                     Switch(Screen.S7_BookRejected, panelNoTag, TIMEOUT_SEC_NO_TAG);
@@ -393,15 +419,16 @@ namespace LibraryTerminal
                 }
 
                 // Ищем 910 с h == bookTag
-                var f910 = rec.FMs(910)
-                              .FirstOrDefault(f => string.Equals(f.Get('h'), bookTag, StringComparison.OrdinalIgnoreCase));
+                var f910 = rec.Fields
+    .Where(f => f.Tag == "910")
+    .FirstOrDefault(f => string.Equals(f.GetFirstSubFieldText('h'), bookTag, StringComparison.OrdinalIgnoreCase));
                 if (f910 == null)
                 {
                     Switch(Screen.S7_BookRejected, panelNoTag, TIMEOUT_SEC_NO_TAG);
                     return;
                 }
 
-                string status = f910.Get('a') ?? string.Empty;
+                string status = f910.GetFirstSubFieldText   ('a') ?? string.Empty;
                 bool canIssue = string.IsNullOrEmpty(status) || status == STATUS_IN_STOCK;
                 if (!canIssue)
                 {
@@ -410,7 +437,7 @@ namespace LibraryTerminal
                 }
 
                 await OpenBinAsync();
-                await OffUi(() => _svc.Set910StatusByTag(rec, bookTag, STATUS_ISSUED, null));
+                await OffUi(() => _svc.Set910StatusAndWrite(rec, STATUS_ISSUED, null, bookTag, null, true));
                 lblSuccess.Text = "Книга выдана";
                 Switch(Screen.S6_Success, panelSuccess, TIMEOUT_SEC_SUCCESS);
             } catch
@@ -448,7 +475,7 @@ namespace LibraryTerminal
                     return;
                 }
 
-                var rec = await OffUi(() => _svc.FindBookByRfidTag(bookTag));
+                var rec = await OffUi(() => _svc.FindOneByInvOrTag(bookTag));
                 if (rec == null)
                 {
                     Switch(Screen.S7_BookRejected, panelNoTag, null);
@@ -468,7 +495,7 @@ namespace LibraryTerminal
                     return;
                 }
 
-                await OffUi(() => _svc.Set910StatusByTag(rec, bookTag, STATUS_IN_STOCK, null));
+                await OffUi(() => _svc.Set910StatusAndWrite(rec, STATUS_IN_STOCK, null, bookTag, null, true));
 
                 await OpenBinAsync();
                 lblSuccess.Text = "Книга принята";

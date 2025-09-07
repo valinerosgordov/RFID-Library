@@ -31,6 +31,7 @@
     <Compile Include="Acr1281PcscReader.cs" />
     <Compile Include="Devices.cs" />
     <Compile Include="IrbisServiceManaged.cs" />
+    <Compile Include="McCompatExtensions.cs" />
     <Compile Include="PcscReader.cs" />
     <Compile Include="PortResolver.cs" />
     <Compile Include="Program.cs" />

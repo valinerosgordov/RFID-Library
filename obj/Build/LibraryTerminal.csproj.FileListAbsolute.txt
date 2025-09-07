@@ -17,8 +17,8 @@ C:\SideProjects\RFID-Library\obj\Build\LibraryTerminal.csproj.AssemblyReference.
 C:\SideProjects\RFID-Library\obj\Build\LibraryTerminal.MainForm.resources
 C:\SideProjects\RFID-Library\obj\Build\LibraryTerminal.csproj.GenerateResource.cache
 C:\SideProjects\RFID-Library\obj\Build\LibraryTerminal.csproj.CoreCompileInputs.cache
-C:\SideProjects\RFID-Library\obj\Build\LibraryTerminal.csproj.CopyComplete
 C:\SideProjects\RFID-Library\obj\Build\LibraryTerminal.exe
 C:\SideProjects\RFID-Library\bin\Build\PCSC.dll
 C:\SideProjects\RFID-Library\bin\Build\PCSC.pdb
 C:\SideProjects\RFID-Library\bin\Build\PCSC.xml
+C:\SideProjects\RFID-Library\obj\Build\LibraryT.18F57315.Up2Date
