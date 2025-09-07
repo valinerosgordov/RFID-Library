@@ -1,5 +1,6 @@
 using System;
 using System.Configuration;
+using System.Linq;                 // <— добавил
 using System.Threading.Tasks;
 using System.Windows.Forms;
 
@@ -46,7 +47,6 @@ namespace LibraryTerminal
 
         // ===== Сервисы/устройства =====
         private IrbisServiceManaged _svc;
-        // УДАЛЕНО: CardReaderSerial _card;
         private BookReaderSerial _bookTake;    // книга (выдача)
         private BookReaderSerial _bookReturn;  // книга (возврат)
         private ArduinoClientSerial _ardu;     // контроллер шкафа/места
@@ -78,7 +78,6 @@ namespace LibraryTerminal
         {
             if (SIM_MODE) { _svc = new IrbisServiceManaged(); return; }
 
-            string conn = "host=127.0.0.1;port=6666;user=MASTER;password=MASTERKEY;DB=IBIS;";
             _svc = new IrbisServiceManaged();
             Exception last = null;
 
@@ -87,8 +86,8 @@ namespace LibraryTerminal
                 try
                 {
                     await OffUi(() => {
-                        _svc.Connect(conn);
-                        _svc.UseDatabase("IBIS");
+                        // Новый API: без UseDatabase, достаточно Connect()
+                        _svc.Connect();
                     });
                     return; // успех
                 } catch (Exception ex)
@@ -108,13 +107,14 @@ namespace LibraryTerminal
             {
                 if (_svc == null) _svc = new IrbisServiceManaged();
                 await OffUi(() => {
-                    try { _svc.UseDatabase("IBIS"); } catch
+                    try { _svc.Connect(); } // повторная Connect() — просто проверка живости
+                    catch
                     {
-                        _svc.Connect("host=127.0.0.1;port=6666;user=MASTER;password=MASTERKEY;DB=IBIS;");
-                        _svc.UseDatabase("IBIS");
+                        _svc.Connect();
                     }
+                    // Пробный запрос (любой несуществующий тег — нам важен сам вызов)
                     var probe = Guid.NewGuid().ToString("N");
-                    _svc.FindByInvOrTag(probe);
+                    _svc.FindBookByRfidTag(probe);
                 });
 
                 if (DEMO_UI)
@@ -224,7 +224,6 @@ namespace LibraryTerminal
         // ===== Горячие клавиши (демо) =====
         protected override bool ProcessCmdKey(ref Message msg, Keys keyData)
         {
-            
             if (keyData == Keys.D1) { OnAnyCardUid("SIM_CARD", "SIM"); return true; }
             if (keyData == Keys.D2) { OnBookTagTake("SIM_BOOK_OK"); return true; }
             if (keyData == Keys.D3) { OnBookTagTake("SIM_BOOK_BAD"); return true; }
@@ -251,7 +250,7 @@ namespace LibraryTerminal
                 _tick.Enabled = false;
             }
         }
-        private void Switch(Screen s, Panel panel) => Switch(s, panel, null);
+        private void Switch(Screen s, Panel panel) { Switch(s, panel, null); }
 
         private void Tick_Tick(object sender, EventArgs e)
         {
@@ -268,7 +267,8 @@ namespace LibraryTerminal
         {
             foreach (Control c in Controls)
             {
-                if (c is Panel pn) pn.Visible = false;
+                var pn = c as Panel;
+                if (pn != null) pn.Visible = false;
             }
             p.Dock = DockStyle.Fill;
             p.Visible = true;
@@ -385,23 +385,23 @@ namespace LibraryTerminal
                     return;
                 }
 
-                var records = await OffUi(() => _svc.FindByInvOrTag(bookTag));
-                if (records == null || records.Length == 0)
+                var rec = await OffUi(() => _svc.FindBookByRfidTag(bookTag));
+                if (rec == null)
                 {
                     Switch(Screen.S7_BookRejected, panelNoTag, TIMEOUT_SEC_NO_TAG);
                     return;
                 }
 
-                var rec = records[0];
-                var byTag = await OffUi(() => _svc.Find910ByTag(rec, bookTag));
-                if (byTag == null || byTag.Length == 0)
+                // Ищем 910 с h == bookTag
+                var f910 = rec.FMs(910)
+                              .FirstOrDefault(f => string.Equals(f.Get('h'), bookTag, StringComparison.OrdinalIgnoreCase));
+                if (f910 == null)
                 {
                     Switch(Screen.S7_BookRejected, panelNoTag, TIMEOUT_SEC_NO_TAG);
                     return;
                 }
 
-                var f910 = byTag[0];
-                string status = f910.GetSubFieldText('a', 0) ?? string.Empty;
+                string status = f910.Get('a') ?? string.Empty;
                 bool canIssue = string.IsNullOrEmpty(status) || status == STATUS_IN_STOCK;
                 if (!canIssue)
                 {
@@ -410,7 +410,7 @@ namespace LibraryTerminal
                 }
 
                 await OpenBinAsync();
-                await OffUi(() => _svc.Set910StatusAndWrite(rec, STATUS_ISSUED, null, bookTag, null, true));
+                await OffUi(() => _svc.Set910StatusByTag(rec, bookTag, STATUS_ISSUED, null));
                 lblSuccess.Text = "Книга выдана";
                 Switch(Screen.S6_Success, panelSuccess, TIMEOUT_SEC_SUCCESS);
             } catch
@@ -448,8 +448,8 @@ namespace LibraryTerminal
                     return;
                 }
 
-                var records = await OffUi(() => _svc.FindByInvOrTag(bookTag));
-                if (records == null || records.Length == 0)
+                var rec = await OffUi(() => _svc.FindBookByRfidTag(bookTag));
+                if (rec == null)
                 {
                     Switch(Screen.S7_BookRejected, panelNoTag, null);
                     var hop = new Timer { Interval = 2000 };
@@ -468,8 +468,7 @@ namespace LibraryTerminal
                     return;
                 }
 
-                var rec = records[0];
-                await OffUi(() => _svc.Set910StatusAndWrite(rec, STATUS_IN_STOCK, null, bookTag, null, true));
+                await OffUi(() => _svc.Set910StatusByTag(rec, bookTag, STATUS_IN_STOCK, null));
 
                 await OpenBinAsync();
                 lblSuccess.Text = "Книга принята";
@@ -555,7 +554,8 @@ namespace LibraryTerminal
 
             foreach (Control c in Controls)
             {
-                if (c is Panel p) p.Controls.Add(back);
+                var p = c as Panel;
+                if (p != null) p.Controls.Add(back);
             }
         }
 

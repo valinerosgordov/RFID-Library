@@ -2,6 +2,7 @@
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
+using System.Configuration; // для чтения appSettings
 
 namespace LibraryTerminal
 {
@@ -16,9 +17,10 @@ namespace LibraryTerminal
         private readonly SemaphoreSlim _mutex = new SemaphoreSlim(1, 1);
         private bool _disposed;
 
-        // Текущая БД (для информации, выбор БД управляется через Push/Pop)
+        // Текущая БД (информативно; выбор БД делается внутри Push/Pop)
         private string _currentDb;
 
+        // --- Основной конструктор (DI) ---
         public IrbisServiceManaged(IIrbisClient client, ILogger log, Config cfg)
         {
             if (client == null) throw new ArgumentNullException("client");
@@ -30,18 +32,22 @@ namespace LibraryTerminal
             _cfg = cfg;
         }
 
+        // --- Параметрless-конструктор (совместимость с существующим кодом) ---
+        public IrbisServiceManaged()
+            : this(CreateRealClient(), new DefaultLogger(), LoadConfigFromApp())
+        { }
+
         // ==== Конфигурация =====================================================
         public sealed class Config
         {
             public Config()
             {
-                // Значения по умолчанию (инициализаторы авто-свойств в C# 5 недоступны)
                 ReadersDb = "RDR";      // база читателей
                 BooksDb = "IBIS";       // база книг
 
                 ReaderCardSearchExpr = "RI={0}"; // поиск по RFID-UID читателя
-                BookByTagSearchExpr = "IN={0}"; // поиск книги по RFID-метке (подполе h)
-                BookByInvSearchExpr = "I={0}";  // поиск книги по инвентарному номеру (подполе b)
+                BookByTagSearchExpr = "IN={0}";  // поиск книги по RFID-метке (подполе h)
+                BookByInvSearchExpr = "I={0}";   // поиск книги по инвентарному номеру (подполе b)
 
                 BookStatusField = 910;
                 StatusCodeSubfield = 'a';
@@ -51,7 +57,7 @@ namespace LibraryTerminal
 
                 UseWhitelist = false;
                 Whitelist = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-                AllowAllOnEmptyWhitelist = false; // в проде лучше false
+                AllowAllOnEmptyWhitelist = false;
 
                 ConnectionString = null;
             }
@@ -106,25 +112,66 @@ namespace LibraryTerminal
             void WriteRecord(IrbisRecord record, bool lockRecord, bool actualize);
         }
 
+        // ===== Реализации по умолчанию (можешь заменить на свои) ==============
+        private static IIrbisClient CreateRealClient()
+        {
+            // TODO: верни здесь твой реальный клиент IRBIS (например, Irbis64Client ...)
+            // Пока стоит заглушка — сборка пройдёт, но на рантайме бросит исключение при вызове.
+            return new DefaultIrbisClient();
+        }
+
+        private sealed class DefaultLogger : ILogger
+        {
+            public void Info(string message) { System.Diagnostics.Debug.WriteLine("[INFO] " + message); }
+            public void Warn(string message) { System.Diagnostics.Debug.WriteLine("[WARN] " + message); }
+            public void Debug(string message) { System.Diagnostics.Debug.WriteLine("[DBG ] " + message); }
+            public void Error(string message, Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine("[ERR ] " + message + ": " + (ex == null ? "" : ex.Message));
+            }
+        }
+
+        private sealed class DefaultIrbisClient : IIrbisClient
+        {
+            public void Connect(string connectionString) { throw new NotImplementedException("Подставь реальный IIrbisClient"); }
+            public void Disconnect() { }
+            public void PushDatabase(string dbName) { }
+            public void PopDatabase() { }
+            public void NoOp() { }
+            public int[] Search(string irbisQuery) { throw new NotImplementedException("Подставь реальный IIrbisClient"); }
+            public IrbisRecord ReadRecord(int mfn) { throw new NotImplementedException("Подставь реальный IIrbisClient"); }
+            public void WriteRecord(IrbisRecord record, bool lockRecord, bool actualize) { throw new NotImplementedException("Подставь реальный IIrbisClient"); }
+            public void Dispose() { }
+        }
+
+        private static Config LoadConfigFromApp()
+        {
+            var cfg = new Config();
+            try
+            {
+                var a = ConfigurationManager.AppSettings;
+                if (a["ReadersDb"] != null) cfg.ReadersDb = a["ReadersDb"];
+                if (a["BooksDb"] != null) cfg.BooksDb = a["BooksDb"];
+                if (a["ReaderCardSearchExpr"] != null) cfg.ReaderCardSearchExpr = a["ReaderCardSearchExpr"];
+                if (a["BookByTagSearchExpr"] != null) cfg.BookByTagSearchExpr = a["BookByTagSearchExpr"];
+                if (a["BookByInvSearchExpr"] != null) cfg.BookByInvSearchExpr = a["BookByInvSearchExpr"];
+                if (a["UseWhitelist"] != null) cfg.UseWhitelist = "true".Equals(a["UseWhitelist"], StringComparison.OrdinalIgnoreCase);
+                if (a["AllowAllOnEmptyWhitelist"] != null) cfg.AllowAllOnEmptyWhitelist = "true".Equals(a["AllowAllOnEmptyWhitelist"], StringComparison.OrdinalIgnoreCase);
+                if (a["ConnectionString"] != null) cfg.ConnectionString = a["ConnectionString"];
+            } catch { }
+            return cfg;
+        }
+
         // Запись IRBIS (упрощённо)
         public sealed class IrbisRecord
         {
             public int Mfn { get; set; }
             public List<Field> Fields { get; private set; }
 
-            public IrbisRecord()
-            {
-                Fields = new List<Field>();
-            }
+            public IrbisRecord() { Fields = new List<Field>(); }
 
-            public Field FM(int tag)
-            {
-                return Fields.FirstOrDefault(f => f.Tag == tag);
-            }
-            public IEnumerable<Field> FMs(int tag)
-            {
-                return Fields.Where(f => f.Tag == tag);
-            }
+            public Field FM(int tag) { return Fields.FirstOrDefault(f => f.Tag == tag); }
+            public IEnumerable<Field> FMs(int tag) { return Fields.Where(f => f.Tag == tag); }
         }
 
         public sealed class Field
@@ -132,10 +179,7 @@ namespace LibraryTerminal
             public int Tag { get; set; }
             public List<SubField> SubFields { get; private set; }
 
-            public Field()
-            {
-                SubFields = new List<SubField>();
-            }
+            public Field() { SubFields = new List<SubField>(); }
 
             public string Get(char code)
             {
@@ -167,6 +211,19 @@ namespace LibraryTerminal
             _client.NoOp();
             _currentDb = null;
             _log.Info("Подключено.");
+        }
+
+        // Совместимость: Connect(string) — как в старом коде
+        public void Connect(string connectionString)
+        {
+            _cfg.ConnectionString = connectionString;
+            Connect();
+        }
+
+        // Совместимость: UseDatabase — в новой версии лишний, оставляем как no-op
+        public void UseDatabase(string db)
+        {
+            _currentDb = db; // только информативно
         }
 
         public void Disconnect()
@@ -232,6 +289,37 @@ namespace LibraryTerminal
             var query = string.Format(_cfg.ReaderCardSearchExpr, Escape(uid));
             var rec = FindOneInDb(_cfg.ReadersDb, query);
             return rec != null;
+        }
+
+        // ==== ОБРАТНАЯ СОВМЕСТИМОСТЬ СО СТАРЫМ API ============================
+        // Старый метод: поиск и по инвентарному, и по RFID-метке. Возвращаем массив 0/1.
+        public IrbisRecord[] FindByInvOrTag(string value)
+        {
+            if (string.IsNullOrWhiteSpace(value)) return new IrbisRecord[0];
+            var byTag = FindBookByRfidTag(value);
+            if (byTag != null) return new[] { byTag };
+            var byInv = FindBookByInventory(value);
+            if (byInv != null) return new[] { byInv };
+            return new IrbisRecord[0];
+        }
+
+        // Старый метод: найти все 910 по tag (h)
+        public Field[] Find910ByTag(IrbisRecord record, string tag)
+        {
+            if (record == null || string.IsNullOrWhiteSpace(tag)) return new Field[0];
+            return record.FMs(_cfg.BookStatusField)
+                         .Where(f => string.Equals(f.Get(_cfg.TagSubfield), tag, StringComparison.OrdinalIgnoreCase))
+                         .ToArray();
+        }
+
+        // Старый метод: изменить статус и записать (совместимость со старым MainForm)
+        public bool Set910StatusAndWrite(IrbisRecord record, string newStatus, string inventory, string tag, string place, bool actualize)
+        {
+            if (!string.IsNullOrWhiteSpace(tag))
+                return Set910StatusByTag(record, tag, newStatus, string.IsNullOrWhiteSpace(place) ? null : place);
+
+            _log.Warn("Set910StatusAndWrite: не задан tag — обновление пропущено");
+            return false;
         }
 
         // ==== Внутренние методы ===============================================
