@@ -3,6 +3,7 @@ using System.Configuration;
 using System.Linq;
 using System.Threading.Tasks;
 using System.Windows.Forms;
+using System.Text.RegularExpressions;
 
 namespace LibraryTerminal
 {
@@ -54,6 +55,9 @@ namespace LibraryTerminal
         // Вариант 1: ACR1281U-C1 (PC/SC)
         private Acr1281PcscReader _acr;        // карта (ACR1281U-C1, PC/SC)
 
+        // RRU9816 (книжный EPC-ридер)
+        private Rru9816Reader _rru;
+
         // фоновые задачи (чтобы не блокировать UI)
         private static Task OffUi(Action a) => Task.Run(a);
         private static Task<T> OffUi<T>(Func<T> f) => Task.Run(f);
@@ -66,11 +70,8 @@ namespace LibraryTerminal
         // === Хелперы для подключения ===
         private static string GetConnString()
         {
-            // из app.config: <add key="ConnectionString" value="host=...;port=...;user=...;password=...;DB=IBIS;" />
             var cfg = ConfigurationManager.AppSettings["ConnectionString"];
             if (!string.IsNullOrWhiteSpace(cfg)) return cfg;
-
-            // запасной дефолт (как раньше)
             return "host=127.0.0.1;port=6666;user=MASTER;password=MASTERKEY;DB=IBIS;";
         }
         private static string GetBooksDb()
@@ -129,16 +130,12 @@ namespace LibraryTerminal
                 await OffUi(() => {
                     try
                     {
-                        // быстрая проверка текущей сессии
                         _svc.UseDatabase(db);
                     } catch
                     {
-                        // переподключение явной строкой + выбор БД
                         _svc.Connect(conn);
                         _svc.UseDatabase(db);
                     }
-
-                    // Пробный запрос (любой несуществующий тег — нам важен сам вызов)
                     var probe = Guid.NewGuid().ToString("N");
                     _svc.FindOneByInvOrTag(probe);
                 });
@@ -166,9 +163,14 @@ namespace LibraryTerminal
             // --- Оборудование ---
             if (!SIM_MODE)
             {
+                int readTo = int.Parse(ConfigurationManager.AppSettings["ReadTimeoutMs"] ?? "700");
+                int writeTo = int.Parse(ConfigurationManager.AppSettings["WriteTimeoutMs"] ?? "700");
+                int reconnMs = int.Parse(ConfigurationManager.AppSettings["AutoReconnectMs"] ?? "1500");
+                int debounce = int.Parse(ConfigurationManager.AppSettings["DebounceMs"] ?? "250");
+
                 try
                 {
-                    // КНИЖНЫЕ ридеры и ардуино оставляем по COM (как было)
+                    // КНИЖНЫЕ ридеры и ардуино по COM
                     string bookTakePort = PortResolver.Resolve(ConfigurationManager.AppSettings["BookTakePort"] ?? ConfigurationManager.AppSettings["BookPort"]);
                     string bookRetPort = PortResolver.Resolve(ConfigurationManager.AppSettings["BookReturnPort"] ?? ConfigurationManager.AppSettings["BookPort"]);
                     string arduinoPort = PortResolver.Resolve(ConfigurationManager.AppSettings["ArduinoPort"]);
@@ -180,11 +182,6 @@ namespace LibraryTerminal
                     string nlBookTake = ConfigurationManager.AppSettings["NewLineBookTake"] ?? ConfigurationManager.AppSettings["NewLineBook"] ?? "\r\n";
                     string nlBookRet = ConfigurationManager.AppSettings["NewLineBookReturn"] ?? ConfigurationManager.AppSettings["NewLineBook"] ?? "\r\n";
                     string nlArduino = ConfigurationManager.AppSettings["NewLineArduino"] ?? "\n";
-
-                    int readTo = int.Parse(ConfigurationManager.AppSettings["ReadTimeoutMs"] ?? "700");
-                    int writeTo = int.Parse(ConfigurationManager.AppSettings["WriteTimeoutMs"] ?? "700");
-                    int reconnMs = int.Parse(ConfigurationManager.AppSettings["AutoReconnectMs"] ?? "1500");
-                    int debounce = int.Parse(ConfigurationManager.AppSettings["DebounceMs"] ?? "250");
 
                     // Книжные ридеры (выдача/возврат)
                     if (!string.IsNullOrWhiteSpace(bookTakePort))
@@ -220,6 +217,37 @@ namespace LibraryTerminal
                         MessageBoxButtons.OK, MessageBoxIcon.Warning);
                 }
 
+                // RRU9816-USB (EPC-ридер для книг)
+                try
+                {
+                    string rruPort = PortResolver.Resolve(
+                        ConfigurationManager.AppSettings["RruPort"]
+                        ?? ConfigurationManager.AppSettings["BookTakePort"] // fallback
+                    );
+                    int rruBaud = int.Parse(
+                        ConfigurationManager.AppSettings["RruBaudRate"]
+                        ?? ConfigurationManager.AppSettings["BaudBookTake"]
+                        ?? ConfigurationManager.AppSettings["BaudBook"]
+                        ?? "115200"
+                    );
+                    string rruNewline =
+                        ConfigurationManager.AppSettings["NewLineRru"]
+                        ?? ConfigurationManager.AppSettings["NewLineBookTake"]
+                        ?? ConfigurationManager.AppSettings["NewLineBook"]
+                        ?? "\r\n";
+
+                    if (!string.IsNullOrWhiteSpace(rruPort))
+                    {
+                        _rru = new Rru9816Reader(rruPort, rruBaud, rruNewline, readTo, writeTo, reconnMs);
+                        _rru.OnEpcHex += OnRruEpc;
+                        _rru.Start();
+                    }
+                } catch (Exception ex)
+                {
+                    MessageBox.Show("RRU9816: " + ex.Message, "RRU9816",
+                        MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                }
+
                 // КАРТА: ACR1281U-C1 через PC/SC (вариант 1)
                 try
                 {
@@ -243,6 +271,7 @@ namespace LibraryTerminal
             } catch { }
             try { if (_ardu != null) _ardu.Dispose(); } catch { }
             try { if (_acr != null) _acr.Dispose(); } catch { }
+            try { if (_rru != null) _rru.Dispose(); } catch { }
 
             base.OnFormClosing(e);
         }
@@ -372,13 +401,65 @@ namespace LibraryTerminal
         private void OnBookTagTake(string tag)
         {
             if (InvokeRequired) { BeginInvoke(new Action<string>(OnBookTagTake), tag); return; }
-            if (_screen == Screen.S3_WaitBookTake) _ = HandleTakeAsync(tag);
+            if (_screen == Screen.S3_WaitBookTake)
+            {
+                var bookKey = ResolveBookKey(tag);
+                _ = HandleTakeAsync(bookKey);
+            }
         }
 
         private void OnBookTagReturn(string tag)
         {
             if (InvokeRequired) { BeginInvoke(new Action<string>(OnBookTagReturn), tag); return; }
-            if (_screen == Screen.S5_WaitBookReturn) _ = HandleReturnAsync(tag);
+            if (_screen == Screen.S5_WaitBookReturn)
+            {
+                var bookKey = ResolveBookKey(tag);
+                _ = HandleReturnAsync(bookKey);
+            }
+        }
+
+        // ===== EPC от RRU9816 =====
+        private void OnRruEpc(string epcHex)
+        {
+            if (InvokeRequired) { BeginInvoke(new Action<string>(OnRruEpc), epcHex); return; }
+
+            var bookKey = ResolveBookKey(epcHex);
+
+            if (_screen == Screen.S3_WaitBookTake)
+                _ = HandleTakeAsync(bookKey);
+            else if (_screen == Screen.S5_WaitBookReturn)
+                _ = HandleReturnAsync(bookKey);
+        }
+
+        // ===== Хелперы EPC → ключ экземпляра =====
+        private static bool IsHex24(string s)
+        {
+            if (string.IsNullOrEmpty(s) || s.Length != 24) return false;
+            for (int i = 0; i < s.Length; i++)
+            {
+                char c = s[i];
+                bool ok = (c >= '0' && c <= '9') || (c >= 'A' && c <= 'F') || (c >= 'a' && c <= 'f');
+                if (!ok) return false;
+            }
+            return true;
+        }
+
+        /// <summary>
+        /// Если на вход прилетел EPC-96 (24 HEX) — парсим его через EpcParser и
+        /// строим ключ экземпляра вида "LL-Serial". Иначе возвращаем исходную строку.
+        /// </summary>
+        private string ResolveBookKey(string tagOrEpc)
+        {
+            if (IsHex24(tagOrEpc))
+            {
+                var epc = EpcParser.Parse(tagOrEpc);
+                if (epc != null && epc.Kind == TagKind.Book)
+                {
+                    return string.Format("{0:D2}-{1}", epc.LibraryCode, epc.Serial);
+                }
+                return tagOrEpc; // не книжная метка — пойдёт как есть
+            }
+            return tagOrEpc; // это уже инв/штрихкод/старый формат
         }
 
         private Task<bool> OpenBinAsync()
@@ -418,17 +499,16 @@ namespace LibraryTerminal
                     return;
                 }
 
-                // Ищем 910 с h == bookTag
                 var f910 = rec.Fields
-    .Where(f => f.Tag == "910")
-    .FirstOrDefault(f => string.Equals(f.GetFirstSubFieldText('h'), bookTag, StringComparison.OrdinalIgnoreCase));
+                    .Where(f => f.Tag == "910")
+                    .FirstOrDefault(f => string.Equals(f.GetFirstSubFieldText('h'), bookTag, StringComparison.OrdinalIgnoreCase));
                 if (f910 == null)
                 {
                     Switch(Screen.S7_BookRejected, panelNoTag, TIMEOUT_SEC_NO_TAG);
                     return;
                 }
 
-                string status = f910.GetFirstSubFieldText   ('a') ?? string.Empty;
+                string status = f910.GetFirstSubFieldText('a') ?? string.Empty;
                 bool canIssue = string.IsNullOrEmpty(status) || status == STATUS_IN_STOCK;
                 if (!canIssue)
                 {
