@@ -4,61 +4,65 @@ using System.Linq;
 using System.Threading.Tasks;
 using System.Windows.Forms;
 using System.Text.RegularExpressions;
+using System.Net.Sockets;
+using System.Threading;
+// ВАЖНО: алиас, чтобы не путать таймеры (Forms vs Threading)
+using WinFormsTimer = System.Windows.Forms.Timer;
 
 namespace LibraryTerminal
 {
     public partial class MainForm : Form
     {
-        // ===== FSM (машина состояний экранов, ТЗ: 9 логических экранов) =====
+        // ===== FSM (экраны интерфейса по ТЗ) =====
         private enum Screen
         {
-            S1_Menu,          // Экран 1. Главное меню: "Взять" / "Вернуть"
-            S2_WaitCardTake,  // Экран 2. Ожидание карты (сценарий "Взять")
-            S3_WaitBookTake,  // Экран 3. Ожидание книжной метки для выдачи
-            S4_WaitCardReturn,// Экран 4. Ожидание карты (сценарий "Вернуть")
-            S5_WaitBookReturn,// Экран 5. Ожидание книжной метки для возврата
-            S6_Success,       // Экран 6. Успех (выдача/возврат выполнен)
-            S7_BookRejected,  // Экран 7. Метка не распознана / книга не найдена
-            S8_CardFail,      // Экран 8. Ошибка карты/авторизации
-            S9_NoSpace        // Экран 9. Нет свободного места (шкаф переполнен)
+            S1_Menu,          // 1. Меню
+            S2_WaitCardTake,  // 2. Ждём карту (выдача)
+            S3_WaitBookTake,  // 3. Ждём книгу (выдача)
+            S4_WaitCardReturn,// 4. Ждём карту (возврат)
+            S5_WaitBookReturn,// 5. Ждём книгу (возврат)
+            S6_Success,       // 6. Успех
+            S7_BookRejected,  // 7. Метка не распознана / книга не найдена
+            S8_CardFail,      // 8. Ошибка карты/авторизации
+            S9_NoSpace        // 9. Нет места (шкаф полон)
         }
-        private enum Mode { None, Take, Return } // текущий сценарий пользователя
+        private enum Mode { None, Take, Return } // активный сценарий
 
         private Screen _screen = Screen.S1_Menu;
         private Mode _mode = Mode.None;
 
-        // --- Таймауты авто-возврата (ТЗ: 20–30 сек) ---
-        private const int TIMEOUT_SEC_SUCCESS = 20; // после успеха
-        private const int TIMEOUT_SEC_ERROR = 20; // после ошибок авторизации/общих
-        private const int TIMEOUT_SEC_NO_SPACE = 20; // при переполнении
-        private const int TIMEOUT_SEC_NO_TAG = 20; // метка не распознана
+        // --- Таймауты авто-возврата на меню (ТЗ ~20–30 сек) ---
+        private const int TIMEOUT_SEC_SUCCESS = 20;
+        private const int TIMEOUT_SEC_ERROR = 20;
+        private const int TIMEOUT_SEC_NO_SPACE = 20;
+        private const int TIMEOUT_SEC_NO_TAG = 20;
 
-        // Автоматический возврат на экран 1 (меню)
-        private readonly Timer _tick = new Timer { Interval = 250 };
+        // Таймер авто-возврата (именно WinForms-таймер!)
+        private readonly WinFormsTimer _tick = new WinFormsTimer { Interval = 250 };
         private DateTime? _deadline = null;
 
-        // === Режимы разработки/демо ===
-        private static readonly bool SIM_MODE = false; // true — без реального железа
-        private const bool DEMO_UI = true;           // показать демо-кнопки на экранах
-        private const bool DEMO_KEYS = true;           // горячие клавиши (1–4, F9)
+        // === Режимы разработки ===
+        private static readonly bool SIM_MODE = false; // true — без железа
+        private const bool DEMO_UI = true;             // рисуем демо-кнопки
+        private const bool DEMO_KEYS = true;           // хоткеи 1–4, F9
 
-        // ===== Статусы поля 910^a в записи ИРБИС (примерная договорённость) =====
-        private const string STATUS_IN_STOCK = "0"; // в фонде (доступно для выдачи)
-        private const string STATUS_ISSUED = "1"; // выдано читателю
+        // ===== Статусы 910^a (договорённость с ИРБИС) =====
+        private const string STATUS_IN_STOCK = "0"; // в фонде
+        private const string STATUS_ISSUED = "1";   // выдано
 
-        // ===== Сервисы/устройства (ТЗ: 3 типа считывателей + Arduino + БИС) =====
-        private IrbisServiceManaged _svc;     // интеграция с ИРБИС (БИС)
-        private BookReaderSerial _bookTake;   // книжный ридер (выдача, COM)
-        private BookReaderSerial _bookReturn; // книжный ридер (возврат, COM)
-        private ArduinoClientSerial _ardu;    // механика (Arduino Nano, COM)
+        // ===== Сервисы/устройства =====
+        private IrbisServiceManaged _svc;      // клиент ИРБИС
+        private BookReaderSerial _bookTake;    // COM-ридер книг (выдача)
+        private BookReaderSerial _bookReturn;  // COM-ридер книг (возврат)
+        private ArduinoClientSerial _ardu;     // контроллер шкафа (Arduino)
 
-        // Вариант карт: ACR1281U-C1 (PC/SC) — 1-2 типы считывателей карт по ТЗ
+        // Карты: ACR1281 (PC/SC)
         private Acr1281PcscReader _acr;
 
-        // 3-й тип считывателя по ТЗ: RRU9816 (книжные EPC-метки, COM)
+        // Книги: RRU9816 (EPC, COM)
         private Rru9816Reader _rru;
 
-        // Вспомогательные фоновые задачи, чтобы не блокировать UI-поток
+        // Фоновые задачи, чтобы не блокировать UI
         private static Task OffUi(Action a) => Task.Run(a);
         private static Task<T> OffUi<T>(Func<T> f) => Task.Run(f);
 
@@ -67,35 +71,70 @@ namespace LibraryTerminal
             InitializeComponent();
         }
 
-        // === Хелперы чтения строк подключения из конфигурации ===
+        // === Конфигурация подключения к ИРБИС ===
         private static string GetConnString()
         {
-            // app.config: <add key="ConnectionString" value="host=...;port=...;user=...;password=...;DB=IBIS;" />
             var cfg = ConfigurationManager.AppSettings["ConnectionString"];
             if (!string.IsNullOrWhiteSpace(cfg)) return cfg;
-            // запасной дефолт
             return "host=127.0.0.1;port=6666;user=MASTER;password=MASTERKEY;DB=IBIS;";
         }
         private static string GetBooksDb()
         {
-            // имя БД ИРБИС (по умолчанию IBIS)
             return ConfigurationManager.AppSettings["BooksDb"] ?? "IBIS";
         }
 
-        // === При показе окна: подключаемся к ИРБИС и делаем probe-запрос ===
+        // Парсинг host/port из строки подключения
+        private static Tuple<string, int> ParseHostPort(string conn)
+        {
+            string host = "127.0.0.1";
+            int port = 6666;
+
+            if (!string.IsNullOrEmpty(conn))
+            {
+                var parts = conn.Split(new[] { ';' }, StringSplitOptions.RemoveEmptyEntries);
+                foreach (var p in parts)
+                {
+                    var kv = p.Split(new[] { '=' }, 2);
+                    if (kv.Length != 2) continue;
+                    var key = kv[0].Trim().ToLowerInvariant();
+                    var val = kv[1].Trim();
+                    if (key == "host" && !string.IsNullOrWhiteSpace(val)) host = val;
+                    else if (key == "port") { int.TryParse(val, out port); }
+                }
+            }
+            return Tuple.Create(host, port);
+        }
+
+        // TCP-проба до сервера ИРБИС — быстрый способ понять, жив ли порт
+        private static async Task<bool> ProbeTcpAsync(string host, int port, int timeoutMs = 1200)
+        {
+            try
+            {
+                using (var cts = new CancellationTokenSource(timeoutMs))
+                using (var client = new TcpClient())
+                {
+                    var task = client.ConnectAsync(host, port);
+                    using (cts.Token.Register(() => { try { client.Close(); } catch { } }, useSynchronizationContext: false))
+                    {
+                        await task.ConfigureAwait(false);
+                        return client.Connected;
+                    }
+                }
+            } catch { return false; }
+        }
+
+        // === При показе окна: коннект и тест ИРБИС ===
         protected override async void OnShown(EventArgs e)
         {
             base.OnShown(e);
             try
             {
-                await InitIrbisWithRetryAsync();  // несколько попыток коннекта
-                await TestIrbisConnectionAsync(); // проверка запросом FindOneByInvOrTag
-            } catch { /* не роняем UI, ошибки покажем ниже */ }
+                await InitIrbisWithRetryAsync();   // устойчивое подключение
+                await TestIrbisConnectionAsync();  // TCP-проба + реальный RPC
+            } catch { /* не падаем UI */ }
         }
 
-        /// <summary>
-        /// Подключение к ИРБИС с ретраями (ТЗ: устойчивость/обработка ошибок).
-        /// </summary>
+        /// <summary>Подключение к ИРБИС с ретраями.</summary>
         private async Task InitIrbisWithRetryAsync()
         {
             if (SIM_MODE) { _svc = new IrbisServiceManaged(); return; }
@@ -126,7 +165,7 @@ namespace LibraryTerminal
         }
 
         /// <summary>
-        /// Быстрый тест работоспособности соединения с ИРБИС (смена БД + пустой поиск).
+        /// Жёсткая проверка соединения: (1) TCP к host:port, (2) реальный вызов к ИРБИС.
         /// </summary>
         private async Task TestIrbisConnectionAsync()
         {
@@ -135,49 +174,55 @@ namespace LibraryTerminal
                 string conn = GetConnString();
                 string db = GetBooksDb();
 
+                // 1) TCP-проба
+                var hp = ParseHostPort(conn);
+                bool tcpOk = await ProbeTcpAsync(hp.Item1, hp.Item2, 1200);
+                if (!tcpOk)
+                    throw new Exception($"Нет TCP-доступа к {hp.Item1}:{hp.Item2}");
+
+                // 2) Реальный RPC (FindOneByInvOrTag) — подтверждаем живой канал
                 if (_svc == null) _svc = new IrbisServiceManaged();
+
                 await OffUi(() => {
                     try
                     {
-                        _svc.UseDatabase(db); // если сессия активна — просто выбираем БД
+                        _svc.UseDatabase(db);
                     } catch
                     {
-                        // если сессия умерла — переподключаемся
                         _svc.Connect(conn);
                         _svc.UseDatabase(db);
                     }
-                    // пробный запрос (нам важен сам вызов к серверу)
                     var probe = Guid.NewGuid().ToString("N");
-                    _svc.FindOneByInvOrTag(probe);
+                    var r = _svc.FindOneByInvOrTag(probe);
+                    // Даже если r == null — это сетевой round-trip, значит связь рабочая.
                 });
 
                 if (DEMO_UI)
                     MessageBox.Show("IRBIS: подключение OK", "IRBIS", MessageBoxButtons.OK, MessageBoxIcon.Information);
             } catch (Exception ex)
             {
-                MessageBox.Show("IRBIS: " + ex.Message, "IRBIS", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                MessageBox.Show("IRBIS: нет подключения.\n" + ex.Message, "IRBIS", MessageBoxButtons.OK, MessageBoxIcon.Error);
             }
         }
 
         private void MainForm_Load(object sender, EventArgs e)
         {
-            // хоткеи и тики таймера автo-возврата
+            // Таймер авто-возврата
             this.KeyPreview = true;
             _tick.Tick += Tick_Tick;
 
-            // базовые надписи/индикаторы/демо-кнопки
+            // Тексты/индикаторы/кнопки демо
             SetUiTexts();
             AddWaitIndicators();
             if (DEMO_UI) AddSimButtons();
             if (DEMO_UI) AddBackButtonForSim();
 
-            // стартуем с меню (Экран 1)
+            // Переходим на экран 1
             ShowScreen(panelMenu);
 
-            // --- Подъём железа (ТЗ: 3 вида ридеров + Arduino) ---
+            // Поднимаем железо
             if (!SIM_MODE)
             {
-                // общие таймауты/паузы чтения/записи и авто-переподключение COM
                 int readTo = int.Parse(ConfigurationManager.AppSettings["ReadTimeoutMs"] ?? "700");
                 int writeTo = int.Parse(ConfigurationManager.AppSettings["WriteTimeoutMs"] ?? "700");
                 int reconnMs = int.Parse(ConfigurationManager.AppSettings["AutoReconnectMs"] ?? "1500");
@@ -185,7 +230,7 @@ namespace LibraryTerminal
 
                 try
                 {
-                    // Книжные ридеры (выдача/возврат) и Arduino — COM-порты
+                    // Порты устройств
                     string bookTakePort = PortResolver.Resolve(ConfigurationManager.AppSettings["BookTakePort"] ?? ConfigurationManager.AppSettings["BookPort"]);
                     string bookRetPort = PortResolver.Resolve(ConfigurationManager.AppSettings["BookReturnPort"] ?? ConfigurationManager.AppSettings["BookPort"]);
                     string arduinoPort = PortResolver.Resolve(ConfigurationManager.AppSettings["ArduinoPort"]);
@@ -198,30 +243,30 @@ namespace LibraryTerminal
                     string nlBookRet = ConfigurationManager.AppSettings["NewLineBookReturn"] ?? ConfigurationManager.AppSettings["NewLineBook"] ?? "\r\n";
                     string nlArduino = ConfigurationManager.AppSettings["NewLineArduino"] ?? "\n";
 
-                    // Ридер "выдачи"
+                    // Ридер выдачи
                     if (!string.IsNullOrWhiteSpace(bookTakePort))
                     {
                         _bookTake = new BookReaderSerial(bookTakePort, baudBookTake, nlBookTake, readTo, writeTo, reconnMs, debounce);
-                        _bookTake.OnTag += OnBookTagTake; // событие метки → сценарий "выдача"
+                        _bookTake.OnTag += OnBookTagTake;
                         _bookTake.Start();
                     }
 
-                    // Ридер "возврата" (может совпадать с "выдачей", тогда делим один инстанс)
+                    // Ридер возврата (может совпадать с выдачей)
                     if (!string.IsNullOrWhiteSpace(bookRetPort))
                     {
                         if (_bookTake != null && bookRetPort == bookTakePort)
                         {
-                            _bookReturn = _bookTake; // один и тот же физический порт
+                            _bookReturn = _bookTake;
                         }
                         else
                         {
                             _bookReturn = new BookReaderSerial(bookRetPort, baudBookRet, nlBookRet, readTo, writeTo, reconnMs, debounce);
                             _bookReturn.Start();
                         }
-                        _bookReturn.OnTag += OnBookTagReturn; // событие метки → сценарий "возврат"
+                        _bookReturn.OnTag += OnBookTagReturn;
                     }
 
-                    // Arduino (открыть/принять/проверить место в шкафу)
+                    // Arduino (опционально)
                     if (!string.IsNullOrWhiteSpace(arduinoPort))
                     {
                         _ardu = new ArduinoClientSerial(arduinoPort, baudArduino, nlArduino, readTo, writeTo, reconnMs);
@@ -233,12 +278,12 @@ namespace LibraryTerminal
                         MessageBoxButtons.OK, MessageBoxIcon.Warning);
                 }
 
-                // RRU9816-USB — третий считыватель по ТЗ (книжные EPC-метки, 24 HEX)
+                // RRU9816 (EPC)
                 try
                 {
                     string rruPort = PortResolver.Resolve(
                         ConfigurationManager.AppSettings["RruPort"]
-                        ?? ConfigurationManager.AppSettings["BookTakePort"] // fallback: использовать тот же COM, если нужно
+                        ?? ConfigurationManager.AppSettings["BookTakePort"]
                     );
                     int rruBaud = int.Parse(
                         ConfigurationManager.AppSettings["RruBaudRate"]
@@ -254,9 +299,8 @@ namespace LibraryTerminal
 
                     if (!string.IsNullOrWhiteSpace(rruPort))
                     {
-                        // Важно: сигнатура конструктора под твой SerialWorker (6 аргументов)
                         _rru = new Rru9816Reader(rruPort, rruBaud, rruNewline, readTo, writeTo, reconnMs);
-                        _rru.OnEpcHex += OnRruEpc; // EPC → наш обработчик
+                        _rru.OnEpcHex += OnRruEpc;
                         _rru.Start();
                     }
                 } catch (Exception ex)
@@ -265,11 +309,11 @@ namespace LibraryTerminal
                         MessageBoxButtons.OK, MessageBoxIcon.Warning);
                 }
 
-                // Считыватель карт ACR1281 через PC/SC (вариант 1 из ТЗ)
+                // Карты ACR1281 (PC/SC)
                 try
                 {
-                    _acr = new Acr1281PcscReader(); // выбирает первый доступный PICC
-                    _acr.OnUid += uid => OnAnyCardUid(uid, "ACR1281"); // единая точка для карт
+                    _acr = new Acr1281PcscReader();
+                    _acr.OnUid += uid => OnAnyCardUid(uid, "ACR1281");
                     _acr.Start();
                 } catch (Exception ex)
                 {
@@ -279,11 +323,9 @@ namespace LibraryTerminal
             }
         }
 
-        /// <summary>
-        /// Корректное закрытие COM/PCSC при выходе.
-        /// </summary>
         protected override void OnFormClosing(FormClosingEventArgs e)
         {
+            // Корректно тушим устройства
             try
             {
                 if (_bookReturn != null && _bookReturn != _bookTake) _bookReturn.Dispose();
@@ -296,8 +338,7 @@ namespace LibraryTerminal
             base.OnFormClosing(e);
         }
 
-        // ===== Горячие клавиши для демо/отладки =====
-        // 1: карта; 2: выдача OK; 3: выдача BAD; 4: возврат FULL; F9: проверка ИРБИС
+        // ===== Хоткеи для демо =====
         protected override bool ProcessCmdKey(ref Message msg, Keys keyData)
         {
             if (keyData == Keys.D1) { OnAnyCardUid("SIM_CARD", "SIM"); return true; }
@@ -309,7 +350,7 @@ namespace LibraryTerminal
             return base.ProcessCmdKey(ref msg, keyData);
         }
 
-        // ===== Переключение экранов + авто-возврат на меню =====
+        // ===== Переключение экранов + авто-возврат =====
         private void Switch(Screen s, Panel panel, int? timeoutSeconds)
         {
             _screen = s;
@@ -330,7 +371,6 @@ namespace LibraryTerminal
 
         private void Tick_Tick(object sender, EventArgs e)
         {
-            // Возврат в меню по истечении таймаута (ТЗ: 20–30 сек)
             if (_deadline.HasValue && DateTime.Now >= _deadline.Value)
             {
                 _deadline = null;
@@ -342,7 +382,7 @@ namespace LibraryTerminal
 
         private void ShowScreen(Panel p)
         {
-            // скрыть все панели и показать только нужную
+            // Скрываем все панели, показываем одну
             foreach (Control c in Controls)
             {
                 var pn = c as Panel;
@@ -353,24 +393,21 @@ namespace LibraryTerminal
             p.BringToFront();
         }
 
-        // ===== Кнопки экрана 1 (меню) — начало сценариев из ТЗ =====
+        // ===== Кнопки меню =====
         private void btnTakeBook_Click(object sender, EventArgs e)
         {
-            // Шаг 2 (ТЗ): "Взять книгу" → ждём карту
             _mode = Mode.Take;
             Switch(Screen.S2_WaitCardTake, panelWaitCardTake);
         }
         private void btnReturnBook_Click(object sender, EventArgs e)
         {
-            // Шаг 4 (ТЗ): "Вернуть книгу" → ждём карту
             _mode = Mode.Return;
             Switch(Screen.S4_WaitCardReturn, panelWaitCardReturn);
         }
 
-        // ===== ЕДИНАЯ точка для ЛЮБОЙ карты (PC/SC, COM, симуляция) =====
+        // ===== Единая точка для карты =====
         private void OnAnyCardUid(string rawUid, string source)
         {
-            // приводим вызов к UI-потоку
             if (InvokeRequired)
             {
                 BeginInvoke(new Action<string, string>(OnAnyCardUid), rawUid, source);
@@ -379,32 +416,25 @@ namespace LibraryTerminal
             _ = OnAnyCardUidAsync(rawUid, source);
         }
 
-        /// <summary>
-        /// Авторизация карты в ИРБИС и переход на следующий шаг сценария.
-        /// </summary>
         private async Task OnAnyCardUidAsync(string rawUid, string source)
         {
-            string uid = NormalizeUid(rawUid); // нормализуем UID (HEX, без разделителей)
+            string uid = NormalizeUid(rawUid);
 
             if (SIM_MODE)
             {
-                // В демо-режиме просто двигаем FSM дальше
                 if (_screen == Screen.S2_WaitCardTake) Switch(Screen.S3_WaitBookTake, panelScanBook);
                 else if (_screen == Screen.S4_WaitCardReturn) Switch(Screen.S5_WaitBookReturn, panelScanBookReturn);
                 return;
             }
 
-            // Авторизация (ТЗ: запрос к БИС, обработка ошибок)
             bool ok = await TryAuthorizeByTwoExprAsync(uid);
 
             if (!ok)
             {
-                // Экран 8 (ошибка карты/авторизации), затем авто-возврат
                 Switch(Screen.S8_CardFail, panelError, TIMEOUT_SEC_ERROR);
                 return;
             }
 
-            // Если авторизация прошла — переходим к сканированию книги
             if (_screen == Screen.S2_WaitCardTake) Switch(Screen.S3_WaitBookTake, panelScanBook);
             else if (_screen == Screen.S4_WaitCardReturn) Switch(Screen.S5_WaitBookReturn, panelScanBookReturn);
         }
@@ -413,7 +443,6 @@ namespace LibraryTerminal
         {
             try
             {
-                // Обёртка над _svc.ValidateCard — запрос к БИС
                 return await OffUi(() => _svc.ValidateCard(uid));
             } catch
             {
@@ -423,8 +452,7 @@ namespace LibraryTerminal
 
         private string NormalizeUid(string uid)
         {
-            // Опции нормализации задаются в app.config:
-            // UidStripDelimiters=true (убрать двоеточия/пробелы/дефисы), UidUpperHex=true
+            // Настраивается в app.config: UidStripDelimiters, UidUpperHex
             if (string.IsNullOrEmpty(uid)) return "";
             bool strip = "true".Equals(ConfigurationManager.AppSettings["UidStripDelimiters"] ?? "true", StringComparison.OrdinalIgnoreCase);
             if (strip) uid = uid.Replace(":", "").Replace(" ", "").Replace("-", "");
@@ -433,13 +461,12 @@ namespace LibraryTerminal
             return uid;
         }
 
-        // ===== Получение книжной метки от COM-ридеров (выдача/возврат) =====
+        // ===== Метка книги с COM-ридеров =====
         private void OnBookTagTake(string tag)
         {
             if (InvokeRequired) { BeginInvoke(new Action<string>(OnBookTagTake), tag); return; }
             if (_screen == Screen.S3_WaitBookTake)
             {
-                // Преобразуем EPC-96 → наш ключ экземпляра (или оставим как есть)
                 var bookKey = ResolveBookKey(tag);
                 _ = HandleTakeAsync(bookKey);
             }
@@ -455,23 +482,20 @@ namespace LibraryTerminal
             }
         }
 
-        // ===== EPC от RRU9816 (24 HEX) — третий ридер по ТЗ =====
+        // ===== EPC от RRU9816 =====
         private void OnRruEpc(string epcHex)
         {
             if (InvokeRequired) { BeginInvoke(new Action<string>(OnRruEpc), epcHex); return; }
 
-            // EPC → ключ книги (например, "LL-Serial")
             var bookKey = ResolveBookKey(epcHex);
 
             if (_screen == Screen.S3_WaitBookTake)
-                _ = HandleTakeAsync(bookKey);    // сценарий "выдача"
+                _ = HandleTakeAsync(bookKey);
             else if (_screen == Screen.S5_WaitBookReturn)
-                _ = HandleReturnAsync(bookKey);  // сценарий "возврат"
+                _ = HandleReturnAsync(bookKey);
         }
 
-        // ===== Хелперы EPC → ключ экземпляра =====
-
-        // Проверяем, что строка похожа на EPC-96: 24 шестнадцатеричных символа
+        // ===== EPC → ключ экземпляра =====
         private static bool IsHex24(string s)
         {
             if (string.IsNullOrEmpty(s) || s.Length != 24) return false;
@@ -484,10 +508,7 @@ namespace LibraryTerminal
             return true;
         }
 
-        /// <summary>
-        /// Если пришёл EPC-96 — парсим его (EpcParser) и строим устойчивый ключ экземпляра,
-        /// например "LL-Serial". Если это не EPC (инв/штрихкод) — возвращаем как есть.
-        /// </summary>
+        /// <summary>Если это EPC-96 — парсим и строим ключ "LL-Serial", иначе возвращаем как есть.</summary>
         private string ResolveBookKey(string tagOrEpc)
         {
             if (IsHex24(tagOrEpc))
@@ -495,38 +516,34 @@ namespace LibraryTerminal
                 var epc = EpcParser.Parse(tagOrEpc);
                 if (epc != null && epc.Kind == TagKind.Book)
                 {
-                    // Формат ключа можно поменять под соглашение с ИРБИС
                     return string.Format("{0:D2}-{1}", epc.LibraryCode, epc.Serial);
                 }
-                // Если пришла не книжная метка (например, билет) — пусть обработается дальше как "не найдено"
-                return tagOrEpc;
+                return tagOrEpc; // не книжная метка — пойдёт дальше как "не найдена"
             }
-            // Уже готовый инвентарный/штрихкод/старый формат
-            return tagOrEpc;
+            return tagOrEpc; // это уже инв/штрихкод/старый формат
         }
 
-        // Команда механике: открыть бункер/люк (в коде ArduinoClientSerial)
+        // Команда механике: открыть/принять
         private Task<bool> OpenBinAsync()
         {
             if (_ardu == null) return Task.FromResult(true);
             return OffUi<bool>(() => { _ardu.OpenBin(); return true; });
         }
 
-        // Запрос механике: есть ли свободное место (для возврата)
+        // Проверка места в шкафу (для возврата)
         private Task<bool> HasSpaceAsync()
         {
             if (_ardu == null) return Task.FromResult(true);
             return OffUi<bool>(() => _ardu.HasSpace());
         }
 
-        // --- Сценарий "Выдача" (экраны 3 → 6/7/8 по ТЗ) ---
+        // --- Сценарий "Выдача" ---
         private async Task HandleTakeAsync(string bookTag)
         {
             try
             {
                 if (SIM_MODE)
                 {
-                    // Демо: "BAD" → ошибка метки; иначе — успех
                     if (bookTag.IndexOf("BAD", StringComparison.OrdinalIgnoreCase) >= 0)
                     {
                         Switch(Screen.S7_BookRejected, panelNoTag, TIMEOUT_SEC_NO_TAG);
@@ -538,16 +555,13 @@ namespace LibraryTerminal
                     return;
                 }
 
-                // 1) Находим запись книги по инв/штрихкоду или тегу (FindOneByInvOrTag)
                 var rec = await OffUi(() => _svc.FindOneByInvOrTag(bookTag));
                 if (rec == null)
                 {
-                    // Экран 7: метка не распознана/книга не найдена
                     Switch(Screen.S7_BookRejected, panelNoTag, TIMEOUT_SEC_NO_TAG);
                     return;
                 }
 
-                // 2) Ищем поле 910 с h == bookTag (соглашение хранения тега/ключа)
                 var f910 = rec.Fields
                     .Where(f => f.Tag == "910")
                     .FirstOrDefault(f => string.Equals(f.GetFirstSubFieldText('h'), bookTag, StringComparison.OrdinalIgnoreCase));
@@ -557,7 +571,6 @@ namespace LibraryTerminal
                     return;
                 }
 
-                // 3) Проверяем статус: можно ли выдавать
                 string status = f910.GetFirstSubFieldText('a') ?? string.Empty;
                 bool canIssue = string.IsNullOrEmpty(status) || status == STATUS_IN_STOCK;
                 if (!canIssue)
@@ -566,32 +579,28 @@ namespace LibraryTerminal
                     return;
                 }
 
-                // 4) Команда механике + фиксация выдачи в БИС (установка 910^a = "1")
                 await OpenBinAsync();
                 await OffUi(() => _svc.Set910StatusAndWrite(rec, STATUS_ISSUED, null, bookTag, null, true));
-
-                // 5) Экран успеха → авто-возврат
                 lblSuccess.Text = "Книга выдана";
                 Switch(Screen.S6_Success, panelSuccess, TIMEOUT_SEC_SUCCESS);
             } catch
             {
-                // Любая ошибка → экран 8 (ошибка) → авто-возврат
                 Switch(Screen.S8_CardFail, panelError, TIMEOUT_SEC_ERROR);
             }
         }
 
-        // --- Сценарий "Возврат" (экраны 5 → 6/7/9 по ТЗ) ---
+        // --- Сценарий "Возврат" ---
         private async Task HandleReturnAsync(string bookTag)
         {
             try
             {
                 if (SIM_MODE)
                 {
-                    // Демо: "BAD" → сначала 7, затем 9; "FULL" → сразу 9; иначе — успех
                     if (bookTag.IndexOf("BAD", StringComparison.OrdinalIgnoreCase) >= 0)
                     {
                         Switch(Screen.S7_BookRejected, panelNoTag, null);
-                        var hop = new Timer { Interval = 2000 };
+                        // Локальная пауза → затем показываем "Нет места"
+                        var hop = new WinFormsTimer { Interval = 2000 };
                         hop.Tick += (s, e2) => {
                             hop.Stop(); hop.Dispose();
                             Switch(Screen.S9_NoSpace, panelOverflow, TIMEOUT_SEC_NO_SPACE);
@@ -610,13 +619,11 @@ namespace LibraryTerminal
                     return;
                 }
 
-                // 1) Находим книгу
                 var rec = await OffUi(() => _svc.FindOneByInvOrTag(bookTag));
                 if (rec == null)
                 {
-                    // Как в ТЗ: 7 → (пауза/действие) → 9 → авто-возврат
                     Switch(Screen.S7_BookRejected, panelNoTag, null);
-                    var hop = new Timer { Interval = 2000 };
+                    var hop = new WinFormsTimer { Interval = 2000 };
                     hop.Tick += (s, e2) => {
                         hop.Stop(); hop.Dispose();
                         Switch(Screen.S9_NoSpace, panelOverflow, TIMEOUT_SEC_NO_SPACE);
@@ -625,7 +632,6 @@ namespace LibraryTerminal
                     return;
                 }
 
-                // 2) Проверка свободного места (механика)
                 bool hasSpace = await HasSpaceAsync();
                 if (!hasSpace)
                 {
@@ -633,22 +639,19 @@ namespace LibraryTerminal
                     return;
                 }
 
-                // 3) Фиксируем возврат (910^a = "0")
                 await OffUi(() => _svc.Set910StatusAndWrite(rec, STATUS_IN_STOCK, null, bookTag, null, true));
 
-                // 4) Команда механике и успех
                 await OpenBinAsync();
                 lblSuccess.Text = "Книга принята";
                 Switch(Screen.S6_Success, panelSuccess, TIMEOUT_SEC_SUCCESS);
             } catch (Exception ex)
             {
-                // Экран 8: ошибка возврата/общая ошибка
                 lblError.Text = "Ошибка возврата: " + ex.Message;
                 Switch(Screen.S8_CardFail, panelError, TIMEOUT_SEC_ERROR);
             }
         }
 
-        // ===== Тексты на экранах (минимальный UX) =====
+        // ===== UI =====
         private void SetUiTexts()
         {
             lblTitleMenu.Text = "Библиотека\nФилиал №1";
@@ -666,7 +669,6 @@ namespace LibraryTerminal
             lblOverflow.Text = "Нет свободного места в шкафу. Обратитесь к сотруднику";
         }
 
-        // Индикация ожидания (бегущая линия) на нужных панелях
         private void AddWaitIndicators()
         {
             AddMarquee(panelWaitCardTake);
@@ -688,7 +690,7 @@ namespace LibraryTerminal
             pr.BringToFront();
         }
 
-        // Демо-кнопки для ручной симуляции сценариев (без железа)
+        // Демо-кнопки для отладки без железа
         private void AddSimButtons()
         {
             var b1 = new Button { Text = "Сим-карта", Width = 140, Height = 36, Left = 20, Top = 20 };
@@ -708,7 +710,7 @@ namespace LibraryTerminal
             panelScanBookReturn.Controls.Add(b4);
         }
 
-        // Кнопка "в меню" на всех экранах для удобной отладки
+        // Кнопка "назад в меню" на всех экранах (для отладки)
         private void AddBackButtonForSim()
         {
             var back = new Button
@@ -734,7 +736,7 @@ namespace LibraryTerminal
             Switch(Screen.S1_Menu, panelMenu);
         }
 
-        // Кнопка/пункт меню для ручной проверки ИРБИС
+        // Кнопка из Designer: ручной тест ИРБИС
         private async void TestIrbisConnection(object sender, EventArgs e)
         {
             await TestIrbisConnectionAsync();
