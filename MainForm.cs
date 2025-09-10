@@ -5,7 +5,13 @@ using System.Threading.Tasks;
 using System.Windows.Forms;
 using System.Net.Sockets;
 using System.Threading;
+using System.Text;
 using WinFormsTimer = System.Windows.Forms.Timer;
+
+// PC/SC
+using PCSC;
+using PCSC.Exceptions;
+using PCSC.Iso7816;
 
 namespace LibraryTerminal
 {
@@ -32,31 +38,41 @@ namespace LibraryTerminal
         private const string STATUS_IN_STOCK = "0";
         private const string STATUS_ISSUED = "1";
 
+        // IRBIS и оборудование
         private IrbisServiceManaged _svc;
         private BookReaderSerial _bookTake;
         private BookReaderSerial _bookReturn;
         private ArduinoClientSerial _ardu;
 
-        private Acr1281PcscReader _acr;
-        private Rru9816Reader _rru;
+        private Acr1281PcscReader _acr;     // PC/SC для карт
+        private Rru9816Reader _rru;         // COM для книжных меток
+        private BookReaderSerial _iqrfid;   // <-- IQRFID-5102 как COM-считыватель карт
 
+        // helpers
         private static Task OffUi(Action a) => Task.Run(a);
         private static Task<T> OffUi<T>(Func<T> f) => Task.Run(f);
 
         public MainForm()
         {
             InitializeComponent();
+            this.KeyPreview = true;
+
+            // горячая клавиша диагностики PC/SC
+            this.KeyDown += async (s, e) => {
+                if (e.KeyCode == Keys.F2)
+                {
+                    await DebugProbeAllReaders();
+                    e.Handled = true;
+                }
+            };
         }
 
-        // --- конфиг/строка подключения ---
+        // ---------- конфиг / строка подключения ----------
         private static string GetConnString()
         {
-            // поддерживаем оба варианта ключей – ConnectionString и connection-string
             var cfg = ConfigurationManager.AppSettings["ConnectionString"]
                    ?? ConfigurationManager.AppSettings["connection-string"];
             if (!string.IsNullOrWhiteSpace(cfg)) return cfg;
-
-            // дефолт
             return "host=127.0.0.1;port=6666;user=MASTER;password=MASTERKEY;db=IBIS;";
         }
         private static string GetBooksDb() => ConfigurationManager.AppSettings["BooksDb"] ?? "IBIS";
@@ -140,28 +156,26 @@ namespace LibraryTerminal
 
                 if (_svc == null) _svc = new IrbisServiceManaged();
                 await OffUi(() => {
-                    try
-                    {
-                        _svc.UseDatabase(db);
-                    } catch
+                    try { _svc.UseDatabase(db); } catch
                     {
                         _svc.Connect(conn);
                         _svc.UseDatabase(db);
                     }
                     var probe = Guid.NewGuid().ToString("N");
-                    _svc.FindOneByInvOrTag(probe); // просто round-trip
+                    _svc.FindOneByInvOrTag(probe); // round-trip
                 });
 
-                if (DEMO_UI) MessageBox.Show("IRBIS: подключение OK", "IRBIS", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                if (DEMO_UI) MessageBox.Show("IRBIS: подключение OK", "IRBIS",
+                    MessageBoxButtons.OK, MessageBoxIcon.Information);
             } catch (Exception ex)
             {
-                MessageBox.Show("IRBIS: нет подключения.\n" + ex.Message, "IRBIS", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                MessageBox.Show("IRBIS: нет подключения.\n" + ex.Message,
+                    "IRBIS", MessageBoxButtons.OK, MessageBoxIcon.Error);
             }
         }
 
         private void MainForm_Load(object sender, EventArgs e)
         {
-            this.KeyPreview = true;
             _tick.Tick += Tick_Tick;
 
             SetUiTexts();
@@ -178,6 +192,7 @@ namespace LibraryTerminal
                 int reconnMs = int.Parse(ConfigurationManager.AppSettings["AutoReconnectMs"] ?? "1500");
                 int debounce = int.Parse(ConfigurationManager.AppSettings["DebounceMs"] ?? "250");
 
+                // --- COM: книжный ридер (выдача/возврат) + Arduino
                 try
                 {
                     string bookTakePort = PortResolver.Resolve(ConfigurationManager.AppSettings["BookTakePort"] ?? ConfigurationManager.AppSettings["BookPort"]);
@@ -220,6 +235,7 @@ namespace LibraryTerminal
                     MessageBox.Show("Оборудование (COM): " + ex.Message, "COM", MessageBoxButtons.OK, MessageBoxIcon.Warning);
                 }
 
+                // --- COM: RRU9816 (книги)
                 try
                 {
                     string rruPort = PortResolver.Resolve(ConfigurationManager.AppSettings["RruPort"] ?? ConfigurationManager.AppSettings["BookTakePort"]);
@@ -237,9 +253,39 @@ namespace LibraryTerminal
                     MessageBox.Show("RRU9816: " + ex.Message, "RRU9816", MessageBoxButtons.OK, MessageBoxIcon.Warning);
                 }
 
+                // --- COM: IQRFID-5102 (карты)
                 try
                 {
-                    _acr = new Acr1281PcscReader();
+                    string iqPort = PortResolver.Resolve(ConfigurationManager.AppSettings["IqrfidPort"]);
+                    int iqBaud = int.Parse(ConfigurationManager.AppSettings["BaudIqrfid"] ?? "9600");
+                    string iqNewLn = ConfigurationManager.AppSettings["NewLineIqrfid"] ?? "\r\n";
+
+                    if (!string.IsNullOrWhiteSpace(iqPort))
+                    {
+                        _iqrfid = new BookReaderSerial(iqPort, iqBaud, iqNewLn, readTo, writeTo, reconnMs, debounce);
+                        // IQRFID присылает UID как текст — отдаём в общий обработчик карт
+                        _iqrfid.OnTag += uid => OnAnyCardUid(uid, "IQRFID-5102");
+                        _iqrfid.Start();
+                    }
+                } catch (Exception ex)
+                {
+                    MessageBox.Show("IQRFID-5102: " + ex.Message, "IQRFID", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                }
+
+                // --- PC/SC: ACR1281 (карты)
+                try
+                {
+                    string preferred = FindPreferredPiccReaderName() ?? "";
+                    if (!string.IsNullOrWhiteSpace(preferred))
+                    {
+                        try { _acr = new Acr1281PcscReader(preferred); } // если есть такой конструктор
+                        catch { _acr = new Acr1281PcscReader(); }        // fallback
+                    }
+                    else
+                    {
+                        _acr = new Acr1281PcscReader();
+                    }
+
                     _acr.OnUid += uid => OnAnyCardUid(uid, "ACR1281");
                     _acr.Start();
                 } catch (Exception ex)
@@ -251,14 +297,12 @@ namespace LibraryTerminal
 
         protected override void OnFormClosing(FormClosingEventArgs e)
         {
-            try
-            {
-                if (_bookReturn != null && _bookReturn != _bookTake) _bookReturn.Dispose();
-                if (_bookTake != null) _bookTake.Dispose();
-            } catch { }
-            try { if (_ardu != null) _ardu.Dispose(); } catch { }
-            try { if (_acr != null) _acr.Dispose(); } catch { }
-            try { if (_rru != null) _rru.Dispose(); } catch { }
+            try { if (_bookReturn != null && _bookReturn != _bookTake) _bookReturn.Dispose(); } catch { }
+            try { _bookTake?.Dispose(); } catch { }
+            try { _ardu?.Dispose(); } catch { }
+            try { _acr?.Dispose(); } catch { }
+            try { _rru?.Dispose(); } catch { }
+            try { _iqrfid?.Dispose(); } catch { }       // <-- IQRFID-5102
             try { _svc?.Dispose(); } catch { }
 
             base.OnFormClosing(e);
@@ -271,6 +315,7 @@ namespace LibraryTerminal
             if (keyData == Keys.D3) { OnBookTagTake("SIM_BOOK_BAD"); return true; }
             if (keyData == Keys.D4) { OnBookTagReturn("SIM_BOOK_FULL"); return true; }
             if (keyData == Keys.F9) { _ = TestIrbisConnectionAsync(); return true; }
+            // F2 — диагностика PC/SC (назначено в конструкторе)
             return base.ProcessCmdKey(ref msg, keyData);
         }
 
@@ -313,6 +358,7 @@ namespace LibraryTerminal
             Switch(Screen.S4_WaitCardReturn, panelWaitCardReturn);
         }
 
+        // ---------- обработка UID ----------
         private void OnAnyCardUid(string rawUid, string source)
         {
             if (InvokeRequired) { BeginInvoke(new Action<string, string>(OnAnyCardUid), rawUid, source); return; }
@@ -321,6 +367,8 @@ namespace LibraryTerminal
 
         private async Task OnAnyCardUidAsync(string rawUid, string source)
         {
+            SafeAppend("uids.log", $"[{DateTime.Now:yyyy-MM-dd HH:mm:ss}] {source}: {rawUid}");
+
             string uid = NormalizeUid(rawUid);
 
             if (SIM_MODE)
@@ -347,6 +395,7 @@ namespace LibraryTerminal
             return uid;
         }
 
+        // ---------- книги ----------
         private void OnBookTagTake(string tag)
         {
             if (InvokeRequired) { BeginInvoke(new Action<string>(OnBookTagTake), tag); return; }
@@ -542,5 +591,132 @@ namespace LibraryTerminal
         private void btnToMenu_Click(object sender, EventArgs e) => Switch(Screen.S1_Menu, panelMenu);
 
         private async void TestIrbisConnection(object sender, EventArgs e) => await TestIrbisConnectionAsync();
+
+        // ======= PC/SC: утилиты =======
+
+        private static void SafeAppend(string path, string line)
+        {
+            try { System.IO.File.AppendAllText(path, line + Environment.NewLine, Encoding.UTF8); } catch { }
+        }
+
+        private string FindPreferredPiccReaderName()
+        {
+            try
+            {
+                using (var ctx = ContextFactory.Instance.Establish(SCardScope.System))
+                {
+                    var readers = ctx.GetReaders();
+                    if (readers == null || readers.Length == 0) return null;
+
+                    var picc = readers.FirstOrDefault(r =>
+                        r.IndexOf("PICC", StringComparison.OrdinalIgnoreCase) >= 0
+                        || r.IndexOf("Contactless", StringComparison.OrdinalIgnoreCase) >= 0);
+                    if (!string.IsNullOrWhiteSpace(picc)) return picc;
+
+                    var anyAcr = readers.FirstOrDefault(r => r.IndexOf("ACR1281", StringComparison.OrdinalIgnoreCase) >= 0);
+                    return anyAcr ?? readers.First();
+                }
+            } catch { return null; }
+        }
+
+        private static void DiagLog(string msg)
+        {
+            SafeAppend("pcsc_diag.log", $"[{DateTime.Now:yyyy-MM-dd HH:mm:ss}] {msg}");
+        }
+
+        /// <summary>
+        /// Диагностика PC/SC. Горячая клавиша F2.
+        /// Перебирает все ридеры и пробует APDU FF CA 00 00 00 (GET UID).
+        /// </summary>
+        private async Task DebugProbeAllReaders()
+        {
+            await Task.Yield();
+
+            var sb = new StringBuilder();
+            sb.AppendLine("=== PC/SC DIAG ===");
+            DiagLog("=== START ===");
+
+            try
+            {
+                using (var ctx = ContextFactory.Instance.Establish(SCardScope.System))
+                {
+                    var readers = ctx.GetReaders();
+                    if (readers == null || readers.Length == 0)
+                    {
+                        MessageBox.Show("PC/SC: ридеры не найдены", "Диагностика",
+                            MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                        DiagLog("Нет ридеров.");
+                        return;
+                    }
+
+                    sb.AppendLine("Найдены ридеры:");
+                    for (int i = 0; i < readers.Length; i++)
+                    {
+                        sb.AppendLine($"  {i}: {readers[i]}");
+                        DiagLog($"Reader[{i}]: {readers[i]}");
+                    }
+
+                    sb.AppendLine();
+                    sb.AppendLine("Пробую получить UID (APDU FF CA 00 00 00)...");
+                    var apdu = new CommandApdu(IsoCase.Case2Short, SCardProtocol.Any)
+                    {
+                        CLA = 0xFF,
+                        INS = 0xCA,
+                        P1 = 0x00,
+                        P2 = 0x00,
+                        Le = 0x00
+                    };
+
+                    foreach (var reader in readers)
+                    {
+                        sb.AppendLine($"--- {reader} ---");
+                        DiagLog($"Connect: {reader}");
+
+                        try
+                        {
+                            // ВАЖНО: сюда передаём контекст ctx, а не ContextFactory.Instance (иначе CS1503)
+                            using (var isoReader = new IsoReader(ctx, reader, SCardShareMode.Shared, SCardProtocol.Any, false))
+                            {
+                                var response = isoReader.Transmit(apdu);
+                                var sw = (response.SW1 << 8) | response.SW2;
+                                if (sw == 0x9000)
+                                {
+                                    var uid = BitConverter.ToString(response.GetData()).Replace("-", "");
+                                    sb.AppendLine($"UID: {uid} (OK)");
+                                    DiagLog($"UID OK: {reader} UID={uid}");
+                                }
+                                else
+                                {
+                                    sb.AppendLine($"SW={sw:X4} (нет карты или команда не поддерживается)");
+                                    DiagLog($"SW={sw:X4} {reader}");
+                                }
+                            }
+                        } catch (PCSCException ex)
+                        {
+                            sb.AppendLine($"PCSC: {ex.SCardError} ({ex.Message})");
+                            DiagLog($"PCSC EX: {reader} -> {ex.SCardError} {ex.Message}");
+                        } catch (Exception ex)
+                        {
+                            sb.AppendLine($"ERR: {ex.Message}");
+                            DiagLog($"GEN EX: {reader} -> {ex.Message}");
+                        }
+                    }
+
+                    sb.AppendLine();
+                    sb.AppendLine("Подсказка: используем ридер, в названии которого есть 'PICC' или 'Contactless'.");
+                }
+            } catch (Exception ex)
+            {
+                sb.AppendLine("FATAL: " + ex.Message);
+                DiagLog("FATAL: " + ex);
+            }
+            finally
+            {
+                DiagLog("=== END ===");
+            }
+
+            MessageBox.Show(sb.ToString(), "Диагностика PC/SC (F2)",
+                MessageBoxButtons.OK, MessageBoxIcon.Information);
+        }
     }
 }

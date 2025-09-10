@@ -6,10 +6,7 @@ using System.Threading.Tasks;
 
 namespace LibraryTerminal
 {
-    /// <summary>
-    /// Чтение UID с ACR1281U-C1 (PICC) через PC/SC (winscard).
-    /// Вызывает OnUid при каждом успешном чтении карты.
-    /// </summary>
+    
     public sealed class Acr1281PcscReader : IDisposable
     {
         // ===== События =====

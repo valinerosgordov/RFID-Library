@@ -3,32 +3,36 @@
   "WorkspaceRootPath": "C:\\SideProjects\\RFID-Library\\",
   "Documents": [
     {
-      "AbsoluteMoniker": "D:0:0:{EC9BBA34-FD53-4982-A9DB-BF574D92A978}|LibraryTerminal.csproj|c:\\sideprojects\\rfid-library\\mainform.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
-      "RelativeMoniker": "D:0:0:{EC9BBA34-FD53-4982-A9DB-BF574D92A978}|LibraryTerminal.csproj|solutionrelative:mainform.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
-    },
-    {
       "AbsoluteMoniker": "D:0:0:{EC9BBA34-FD53-4982-A9DB-BF574D92A978}|LibraryTerminal.csproj|C:\\SideProjects\\RFID-Library\\appconfig.xml||{FA3CD31E-987B-443A-9B81-186104E8DAC1}",
       "RelativeMoniker": "D:0:0:{EC9BBA34-FD53-4982-A9DB-BF574D92A978}|LibraryTerminal.csproj|solutionrelative:appconfig.xml||{FA3CD31E-987B-443A-9B81-186104E8DAC1}"
     },
     {
-      "AbsoluteMoniker": "D:0:0:{EC9BBA34-FD53-4982-A9DB-BF574D92A978}|LibraryTerminal.csproj|C:\\SideProjects\\RFID-Library\\irbisservicemanaged.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
+      "AbsoluteMoniker": "D:0:0:{EC9BBA34-FD53-4982-A9DB-BF574D92A978}|LibraryTerminal.csproj|c:\\sideprojects\\rfid-library\\irbisservicemanaged.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
       "RelativeMoniker": "D:0:0:{EC9BBA34-FD53-4982-A9DB-BF574D92A978}|LibraryTerminal.csproj|solutionrelative:irbisservicemanaged.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
     },
     {
-      "AbsoluteMoniker": "D:0:0:{EC9BBA34-FD53-4982-A9DB-BF574D92A978}|LibraryTerminal.csproj|C:\\SideProjects\\RFID-Library\\epcparser.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
-      "RelativeMoniker": "D:0:0:{EC9BBA34-FD53-4982-A9DB-BF574D92A978}|LibraryTerminal.csproj|solutionrelative:epcparser.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
+      "AbsoluteMoniker": "D:0:0:{EC9BBA34-FD53-4982-A9DB-BF574D92A978}|LibraryTerminal.csproj|c:\\sideprojects\\rfid-library\\pcscreader.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
+      "RelativeMoniker": "D:0:0:{EC9BBA34-FD53-4982-A9DB-BF574D92A978}|LibraryTerminal.csproj|solutionrelative:pcscreader.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
     },
     {
-      "AbsoluteMoniker": "D:0:0:{EC9BBA34-FD53-4982-A9DB-BF574D92A978}|LibraryTerminal.csproj|C:\\SideProjects\\RFID-Library\\mainform.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}|Form",
-      "RelativeMoniker": "D:0:0:{EC9BBA34-FD53-4982-A9DB-BF574D92A978}|LibraryTerminal.csproj|solutionrelative:mainform.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}|Form"
+      "AbsoluteMoniker": "D:0:0:{EC9BBA34-FD53-4982-A9DB-BF574D92A978}|LibraryTerminal.csproj|c:\\sideprojects\\rfid-library\\mainform.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
+      "RelativeMoniker": "D:0:0:{EC9BBA34-FD53-4982-A9DB-BF574D92A978}|LibraryTerminal.csproj|solutionrelative:mainform.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
     },
     {
-      "AbsoluteMoniker": "D:0:0:{EC9BBA34-FD53-4982-A9DB-BF574D92A978}|LibraryTerminal.csproj|C:\\SideProjects\\RFID-Library\\rru9816reader.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
+      "AbsoluteMoniker": "D:0:0:{EC9BBA34-FD53-4982-A9DB-BF574D92A978}|LibraryTerminal.csproj|c:\\sideprojects\\rfid-library\\rru9816reader.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
       "RelativeMoniker": "D:0:0:{EC9BBA34-FD53-4982-A9DB-BF574D92A978}|LibraryTerminal.csproj|solutionrelative:rru9816reader.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{EC9BBA34-FD53-4982-A9DB-BF574D92A978}|LibraryTerminal.csproj|c:\\sideprojects\\rfid-library\\acr1281pcscreader.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
+      "RelativeMoniker": "D:0:0:{EC9BBA34-FD53-4982-A9DB-BF574D92A978}|LibraryTerminal.csproj|solutionrelative:acr1281pcscreader.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
     },
     {
       "AbsoluteMoniker": "D:0:0:{EC9BBA34-FD53-4982-A9DB-BF574D92A978}|LibraryTerminal.csproj|C:\\SideProjects\\RFID-Library\\devices.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
       "RelativeMoniker": "D:0:0:{EC9BBA34-FD53-4982-A9DB-BF574D92A978}|LibraryTerminal.csproj|solutionrelative:devices.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{EC9BBA34-FD53-4982-A9DB-BF574D92A978}|LibraryTerminal.csproj|C:\\SideProjects\\RFID-Library\\epcparser.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
+      "RelativeMoniker": "D:0:0:{EC9BBA34-FD53-4982-A9DB-BF574D92A978}|LibraryTerminal.csproj|solutionrelative:epcparser.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
     }
   ],
   "DocumentGroupContainers": [
@@ -48,24 +52,11 @@
         },
         {
           "DockedHeight": 13,
-          "SelectedChildIndex": 1,
+          "SelectedChildIndex": 7,
           "Children": [
             {
               "$type": "Bookmark",
               "Name": "ST:0:0:{d78612c7-9962-4b83-95d9-268046dad23a}"
-            },
-            {
-              "$type": "Document",
-              "DocumentIndex": 0,
-              "Title": "MainForm.cs",
-              "DocumentMoniker": "C:\\SideProjects\\RFID-Library\\MainForm.cs",
-              "RelativeDocumentMoniker": "MainForm.cs",
-              "ToolTip": "C:\\SideProjects\\RFID-Library\\MainForm.cs",
-              "RelativeToolTip": "MainForm.cs",
-              "ViewState": "AgIAAAAAAAAAAAAAAAAAAAUAAAAZAAAAAAAAAA==",
-              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
-              "WhenOpened": "2025-09-08T19:18:04.578Z",
-              "EditorCaption": ""
             },
             {
               "$type": "Bookmark",
@@ -74,26 +65,80 @@
             {
               "$type": "Document",
               "DocumentIndex": 1,
-              "Title": "AppConfig.xml",
-              "DocumentMoniker": "C:\\SideProjects\\RFID-Library\\AppConfig.xml",
-              "RelativeDocumentMoniker": "AppConfig.xml",
-              "ToolTip": "C:\\SideProjects\\RFID-Library\\AppConfig.xml",
-              "RelativeToolTip": "AppConfig.xml",
-              "ViewState": "AgIAAAAAAAAAAAAAAAAAAAMAAABqAAAAAAAAAA==",
-              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.003576|",
-              "WhenOpened": "2025-09-10T05:44:25.529Z"
-            },
-            {
-              "$type": "Document",
-              "DocumentIndex": 2,
               "Title": "IrbisServiceManaged.cs",
               "DocumentMoniker": "C:\\SideProjects\\RFID-Library\\IrbisServiceManaged.cs",
               "RelativeDocumentMoniker": "IrbisServiceManaged.cs",
               "ToolTip": "C:\\SideProjects\\RFID-Library\\IrbisServiceManaged.cs",
               "RelativeToolTip": "IrbisServiceManaged.cs",
-              "ViewState": "AgIAAB8BAAAAAAAAAAAAADEBAAAAAAAAAAAAAA==",
+              "ViewState": "AgIAAAAAAAAAAAAAAAAAAHUAAAAAAAAAAAAAAA==",
               "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
-              "WhenOpened": "2025-09-10T05:19:54.596Z"
+              "WhenOpened": "2025-09-10T16:02:56.975Z",
+              "EditorCaption": ""
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 2,
+              "Title": "PcscReader.cs",
+              "DocumentMoniker": "C:\\SideProjects\\RFID-Library\\PcscReader.cs",
+              "RelativeDocumentMoniker": "PcscReader.cs",
+              "ToolTip": "C:\\SideProjects\\RFID-Library\\PcscReader.cs",
+              "RelativeToolTip": "PcscReader.cs",
+              "ViewState": "AgIAAAAAAAAAAAAAAAAAAAMAAAAUAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
+              "WhenOpened": "2025-09-10T15:13:09.615Z",
+              "EditorCaption": ""
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 4,
+              "Title": "Rru9816Reader.cs",
+              "DocumentMoniker": "C:\\SideProjects\\RFID-Library\\Rru9816Reader.cs",
+              "RelativeDocumentMoniker": "Rru9816Reader.cs",
+              "ToolTip": "C:\\SideProjects\\RFID-Library\\Rru9816Reader.cs",
+              "RelativeToolTip": "Rru9816Reader.cs",
+              "ViewState": "AgIAAAIAAAAAAAAAAAAwwCIAAAALAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
+              "WhenOpened": "2025-09-10T14:52:43.801Z",
+              "EditorCaption": ""
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 5,
+              "Title": "Acr1281PcscReader.cs",
+              "DocumentMoniker": "C:\\SideProjects\\RFID-Library\\Acr1281PcscReader.cs",
+              "RelativeDocumentMoniker": "Acr1281PcscReader.cs",
+              "ToolTip": "C:\\SideProjects\\RFID-Library\\Acr1281PcscReader.cs",
+              "RelativeToolTip": "Acr1281PcscReader.cs",
+              "ViewState": "AgIAAAAAAAAAAAAAAAAAAAkAAAApAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
+              "WhenOpened": "2025-09-10T14:52:32.956Z",
+              "EditorCaption": ""
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 3,
+              "Title": "MainForm.cs",
+              "DocumentMoniker": "C:\\SideProjects\\RFID-Library\\MainForm.cs",
+              "RelativeDocumentMoniker": "MainForm.cs",
+              "ToolTip": "C:\\SideProjects\\RFID-Library\\MainForm.cs",
+              "RelativeToolTip": "MainForm.cs",
+              "ViewState": "AgIAAAAAAAAAAAAAAAAAANICAAAAAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
+              "WhenOpened": "2025-09-08T19:18:04.578Z",
+              "EditorCaption": ""
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 0,
+              "Title": "AppConfig.xml",
+              "DocumentMoniker": "C:\\SideProjects\\RFID-Library\\AppConfig.xml",
+              "RelativeDocumentMoniker": "AppConfig.xml",
+              "ToolTip": "C:\\SideProjects\\RFID-Library\\AppConfig.xml",
+              "RelativeToolTip": "AppConfig.xml",
+              "ViewState": "AgIAAAAAAAAAAAAAAAAAAB8AAAAAAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.003576|",
+              "WhenOpened": "2025-09-10T05:44:25.529Z",
+              "EditorCaption": ""
             },
             {
               "$type": "Document",
@@ -105,42 +150,21 @@
               "RelativeToolTip": "Devices.cs",
               "ViewState": "AgIAAAAAAAAAAAAAAAAAAEAAAAAKAAAAAAAAAA==",
               "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
-              "WhenOpened": "2025-09-08T17:04:35.403Z"
+              "WhenOpened": "2025-09-08T17:04:35.403Z",
+              "EditorCaption": ""
             },
             {
               "$type": "Document",
-              "DocumentIndex": 3,
+              "DocumentIndex": 7,
               "Title": "EpcParser.cs",
               "DocumentMoniker": "C:\\SideProjects\\RFID-Library\\EpcParser.cs",
               "RelativeDocumentMoniker": "EpcParser.cs",
               "ToolTip": "C:\\SideProjects\\RFID-Library\\EpcParser.cs",
               "RelativeToolTip": "EpcParser.cs",
-              "ViewState": "AgIAAAAAAAAAAAAAAAAAABUAAAA6AAAAAAAAAA==",
+              "ViewState": "AgIAAC4AAAAAAAAAAAAAAFUAAAAAAAAAAAAAAA==",
               "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
-              "WhenOpened": "2025-09-08T19:16:31.477Z"
-            },
-            {
-              "$type": "Document",
-              "DocumentIndex": 4,
-              "Title": "MainForm.cs [Design]",
-              "DocumentMoniker": "C:\\SideProjects\\RFID-Library\\MainForm.cs",
-              "RelativeDocumentMoniker": "MainForm.cs",
-              "ToolTip": "C:\\SideProjects\\RFID-Library\\MainForm.cs [Design]",
-              "RelativeToolTip": "MainForm.cs [Design]",
-              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
-              "WhenOpened": "2025-09-08T19:17:56.48Z"
-            },
-            {
-              "$type": "Document",
-              "DocumentIndex": 5,
-              "Title": "Rru9816Reader.cs",
-              "DocumentMoniker": "C:\\SideProjects\\RFID-Library\\Rru9816Reader.cs",
-              "RelativeDocumentMoniker": "Rru9816Reader.cs",
-              "ToolTip": "C:\\SideProjects\\RFID-Library\\Rru9816Reader.cs",
-              "RelativeToolTip": "Rru9816Reader.cs",
-              "ViewState": "AgIAAAAAAAAAAAAAAAAAACMAAAAAAAAAAAAAAA==",
-              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
-              "WhenOpened": "2025-09-08T19:13:54.154Z"
+              "WhenOpened": "2025-09-08T19:16:31.477Z",
+              "EditorCaption": ""
             }
           ]
         }

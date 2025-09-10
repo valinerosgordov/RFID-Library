@@ -1,47 +1,67 @@
 ﻿<appSettings>
-  <!-- ==== IRBIS подключение ==== -->
-  <!-- Заполни реальными данными сервера -->
+  <!-- ==== IRBIS ==== -->
   <add key="connection-string" value="host=127.0.0.1;port=6666;user=MASTER;password=MASTERKEY;db=IBIS;" />
-
-  <!-- ==== Базы ==== -->
   <add key="BooksDb" value="IBIS"/>
   <add key="ReadersDb" value="RDR"/>
 
-  <!-- ==== Поисковые выражения (ИМПОРТ + терминал) ==== -->
-  <!-- Импорт читателей ищет дубликаты по UID -->
-  <add key="ExprReaderByUid" value="&quot;UID={0}&quot;"/>
-  <!-- Поиск книги по инвентарному -->
+  <!-- ==== Поиск ==== -->
+  <add key="ExprReaderByUidList"
+       value="&quot;RI={0}&quot;;&quot;RFID={0}&quot;;&quot;CCUID={0}&quot;"/>
+
+  <add key="UidStripDelimiters" value="false"/>
+
+
+  <!-- Книга по инвентарному / RFID в каталоге -->
   <add key="ExprBookByInv"  value="&quot;INV={0}&quot;"/>
-  <!-- Поиск книги по RFID-ключу (если настроен соответствующий индекс/ключ) -->
-  <add key="ExprBookByRfid" value="&quot;RFID={0}&quot;"/>
+  <add key="ExprBookByRfid" value="&quot;HIN={0}&quot;"/>
 
-  <!-- ==== Куда класть UID читателя (для ValidateCard и импорта) ==== -->
-  <add key="ReaderUidField" value="30"/>
-  <add key="ReaderUidSub"   value="a"/>
-
-  <!-- ==== Поле экземпляра (книги) ==== -->
-  <add key="HoldingsField"       value="910"/>
-  <add key="HoldingsSubInv"      value="b"/>
-  <!-- инвентарный -->
-  <add key="HoldingsSubStatus"   value="a"/>
-  <!-- статус 0/1 -->
-  <add key="HoldingsSubRfid"     value="h"/>
-  <!-- RFID ключ -->
-  <add key="HoldingsSubPlace"    value="d"/>
-  <!-- место хранения (если нужно) -->
-
-  <!-- Если RFID приходит как EPC-hex (24 HEX) и надо преобразовывать в "LL-Serial" -->
-  <add key="UseEpcBookKey" value="false"/>
-
-  <!-- ==== Авторизация (у тебя уже были эти ключи — можно оставить, если используешь) ==== -->
-  <add key="CitizenCardSearchExpr" value="&quot;CCUID={0}&quot;"/>
-  <add key="LibraryCardSearchExpr" value="&quot;RFID={0}&quot;"/>
-
-  <!-- ==== Нормализация UID (оставляем) ==== -->
+  <!-- ==== Нормализация UID ==== -->
   <add key="UidUpperHex" value="true"/>
   <add key="UidStripDelimiters" value="true"/>
 
+  <!-- ==== Поля читателя (на будущее) ==== -->
+  <add key="ReaderUidField" value="30"/>
+  <add key="ReaderUidSub"   value="a"/>
 
+  <!-- ==== Экземпляры (910) ==== -->
+  <add key="HoldingsField"       value="910"/>
+  <add key="HoldingsSubInv"      value="b"/>
+  <add key="HoldingsSubStatus"   value="a"/>
+  <add key="HoldingsSubRfid"     value="h"/>
+  <add key="HoldingsSubPlace"    value="d"/>
 
+  <!-- ==== Выдача/возврат ==== -->
+  <add key="MaskMrg" value="09"/>
+  <add key="BriefFormat" value="@brief"/>
+
+  <!-- ==== Книжный ридер + Arduino (COM) ==== -->
+  <add key="BookTakePort" value="COM3"/>
+  <add key="BookReturnPort" value="COM4"/>
+  <add key="BaudBookTake" value="9600"/>
+  <add key="BaudBookReturn" value="9600"/>
+  <add key="NewLineBookTake" value="\r\n"/>
+  <add key="NewLineBookReturn" value="\r\n"/>
+
+  <add key="ArduinoPort" value="COM5"/>
+  <add key="BaudArduino" value="115200"/>
+  <add key="NewLineArduino" value="\n"/>
+
+  <!-- ==== RRU9816 (книги, COM) ==== -->
+  <add key="RruPort" value="COM8"/>
+  <add key="RruBaudRate" value="115200"/>
+  <add key="NewLineRru" value="\r\n"/>
+
+  <!-- ==== IQRFID-5102 (карты, COM) ==== -->
+  <add key="IqrfidPort" value="COM7"/>
+  <add key="BaudIqrfid" value="9600"/>
+  <add key="NewLineIqrfid" value="\r\n"/>
+
+  <!-- ==== Тайминги/устойчивость ==== -->
+  <add key="ReadTimeoutMs" value="700"/>
+  <add key="WriteTimeoutMs" value="700"/>
+  <add key="AutoReconnectMs" value="1500"/>
+  <add key="DebounceMs" value="250"/>
+
+  <!-- ==== Прочее ==== -->
+  <add key="UseEpcBookKey" value="false"/>
 </appSettings>
-

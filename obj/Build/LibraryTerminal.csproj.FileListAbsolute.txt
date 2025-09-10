@@ -22,3 +22,6 @@ C:\SideProjects\RFID-Library\bin\Build\PCSC.dll
 C:\SideProjects\RFID-Library\bin\Build\PCSC.pdb
 C:\SideProjects\RFID-Library\bin\Build\PCSC.xml
 C:\SideProjects\RFID-Library\obj\Build\LibraryT.18F57315.Up2Date
+C:\SideProjects\RFID-Library\bin\Build\PCSC.Iso7816.dll
+C:\SideProjects\RFID-Library\bin\Build\PCSC.Iso7816.pdb
+C:\SideProjects\RFID-Library\bin\Build\PCSC.Iso7816.xml
