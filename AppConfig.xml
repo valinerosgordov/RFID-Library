@@ -1,36 +1,47 @@
-﻿<?xml version="1.0" encoding="utf-8"?>
-<configuration>
-<appSettings>
-  <!-- COM-ридер карты -->
-  <add key="CardPort" value="COM5"/>
-  <add key="BaudCard" value="9600"/>
-  <add key="NewLineCard" value="&#13;&#10;"/>
+﻿<appSettings>
+  <!-- ==== IRBIS подключение ==== -->
+  <!-- Заполни реальными данными сервера -->
+  <add key="connection-string" value="host=127.0.0.1;port=6666;user=MASTER;password=MASTERKEY;db=IBIS;" />
 
-  <!-- Книжные ридеры/Arduino можно оставить пустыми -->
-  <add key="BookTakePort" value=""/>
-  <add key="BookReturnPort" value=""/>
-  <add key="ArduinoPort" value=""/>
-
-  <add key="BaudBookTake" value="9600"/>
-  <add key="BaudBookReturn" value="9600"/>
-  <add key="BaudArduino" value="115200"/>
-  <add key="NewLineBookTake" value="&#13;&#10;"/>
-  <add key="NewLineBookReturn" value="&#13;&#10;"/>
-  <add key="NewLineArduino" value="&#10;"/>
-
-  <add key="ReadTimeoutMs" value="700"/>
-  <add key="WriteTimeoutMs" value="700"/>
-  <add key="AutoReconnectMs" value="1500"/>
-  <add key="DebounceMs" value="250"/>
-
-  <!-- Авторизация в ИРБИС -->
+  <!-- ==== Базы ==== -->
+  <add key="BooksDb" value="IBIS"/>
   <add key="ReadersDb" value="RDR"/>
+
+  <!-- ==== Поисковые выражения (ИМПОРТ + терминал) ==== -->
+  <!-- Импорт читателей ищет дубликаты по UID -->
+  <add key="ExprReaderByUid" value="&quot;UID={0}&quot;"/>
+  <!-- Поиск книги по инвентарному -->
+  <add key="ExprBookByInv"  value="&quot;INV={0}&quot;"/>
+  <!-- Поиск книги по RFID-ключу (если настроен соответствующий индекс/ключ) -->
+  <add key="ExprBookByRfid" value="&quot;RFID={0}&quot;"/>
+
+  <!-- ==== Куда класть UID читателя (для ValidateCard и импорта) ==== -->
+  <add key="ReaderUidField" value="30"/>
+  <add key="ReaderUidSub"   value="a"/>
+
+  <!-- ==== Поле экземпляра (книги) ==== -->
+  <add key="HoldingsField"       value="910"/>
+  <add key="HoldingsSubInv"      value="b"/>
+  <!-- инвентарный -->
+  <add key="HoldingsSubStatus"   value="a"/>
+  <!-- статус 0/1 -->
+  <add key="HoldingsSubRfid"     value="h"/>
+  <!-- RFID ключ -->
+  <add key="HoldingsSubPlace"    value="d"/>
+  <!-- место хранения (если нужно) -->
+
+  <!-- Если RFID приходит как EPC-hex (24 HEX) и надо преобразовывать в "LL-Serial" -->
+  <add key="UseEpcBookKey" value="false"/>
+
+  <!-- ==== Авторизация (у тебя уже были эти ключи — можно оставить, если используешь) ==== -->
   <add key="CitizenCardSearchExpr" value="&quot;CCUID={0}&quot;"/>
   <add key="LibraryCardSearchExpr" value="&quot;RFID={0}&quot;"/>
 
-  <!-- Нормализация UID -->
+  <!-- ==== Нормализация UID (оставляем) ==== -->
   <add key="UidUpperHex" value="true"/>
   <add key="UidStripDelimiters" value="true"/>
+
+
+
 </appSettings>
 
-</configuration>
