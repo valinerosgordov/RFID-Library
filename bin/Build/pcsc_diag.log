@@ -53,3 +53,14 @@
 [2025-09-10 20:55:08] Connect: ACS ACR1281 1S Dual Reader SAM 0
 [2025-09-10 20:55:08] PCSC EX: ACS ACR1281 1S Dual Reader SAM 0 -> RemovedCard The smart card has been removed, so further communication is not possible.
 [2025-09-10 20:55:08] === END ===
+[2025-09-10 21:07:26] === START ===
+[2025-09-10 21:07:26] Reader[0]: ACS ACR1281 1S Dual Reader ICC 0
+[2025-09-10 21:07:26] Reader[1]: ACS ACR1281 1S Dual Reader PICC 0
+[2025-09-10 21:07:26] Reader[2]: ACS ACR1281 1S Dual Reader SAM 0
+[2025-09-10 21:07:26] Connect: ACS ACR1281 1S Dual Reader ICC 0
+[2025-09-10 21:07:26] PCSC EX: ACS ACR1281 1S Dual Reader ICC 0 -> RemovedCard The smart card has been removed, so further communication is not possible.
+[2025-09-10 21:07:26] Connect: ACS ACR1281 1S Dual Reader PICC 0
+[2025-09-10 21:07:26] UID OK: ACS ACR1281 1S Dual Reader PICC 0 UID=04239092F17380
+[2025-09-10 21:07:26] Connect: ACS ACR1281 1S Dual Reader SAM 0
+[2025-09-10 21:07:26] PCSC EX: ACS ACR1281 1S Dual Reader SAM 0 -> RemovedCard The smart card has been removed, so further communication is not possible.
+[2025-09-10 21:07:26] === END ===
