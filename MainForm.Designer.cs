@@ -29,7 +29,7 @@ namespace LibraryTerminal
             this.panelOverflow = new System.Windows.Forms.Panel();
             this.panelNoTag = new System.Windows.Forms.Panel();
 
-            // --------- Кнопки меню (2 по ТЗ) ---------
+            // --------- Кнопки меню ---------
             this.btnTakeBook = new System.Windows.Forms.Button();
             this.btnReturnBook = new System.Windows.Forms.Button();
 
@@ -44,7 +44,11 @@ namespace LibraryTerminal
             this.lblNoTag = new System.Windows.Forms.Label();
             this.lblError = new System.Windows.Forms.Label();
 
-            // --------- Демо-кнопки (создаются в коде, но поля держим тут) ---------
+            // --------- НОВОЕ: инфо о читателе ---------
+            this.lblReaderInfoTake = new System.Windows.Forms.Label();
+            this.lblReaderInfoReturn = new System.Windows.Forms.Label();
+
+            // --------- поля под демо-кнопки (не используются дизайнером) ---------
             this.btnSimCardTake = new System.Windows.Forms.Button();
             this.btnSimCardReturn = new System.Windows.Forms.Button();
             this.btnSimBookTake = new System.Windows.Forms.Button();
@@ -57,7 +61,7 @@ namespace LibraryTerminal
             this.ClientSize = new System.Drawing.Size(800, 600);
             this.Name = "MainForm";
             this.Text = "Library Terminal";
-            this.KeyPreview = true; // ловим горячие клавиши
+            this.KeyPreview = true;
             this.Load += new System.EventHandler(this.MainForm_Load);
 
             // ========= Панель меню =========
@@ -107,18 +111,42 @@ namespace LibraryTerminal
             this.panelWaitCardReturn.Controls.Add(this.lblWaitCardReturn);
             AddMarqueeTo(this.panelWaitCardReturn);
 
-            // S3 — Ожидание книги (выдача)
+            // ====== S3 — Ожидание книги (выдача) ======
             this.panelScanBook.Location = new Point(0, 0);
             this.panelScanBook.Size = new Size(800, 600);
+
+            // линия с brief
+            this.lblReaderInfoTake.AutoSize = false;
+            this.lblReaderInfoTake.Dock = DockStyle.Top;
+            this.lblReaderInfoTake.Height = 72;
+            this.lblReaderInfoTake.TextAlign = ContentAlignment.MiddleCenter;
+            this.lblReaderInfoTake.Font = new Font("Segoe UI", 14F, FontStyle.Regular);
+            this.lblReaderInfoTake.ForeColor = Color.FromArgb(45, 45, 45);
+            this.lblReaderInfoTake.Text = "";
+
+            // основной текст
             SetupBigLabel(this.lblScanBook, "Поднесите книгу к считывателю");
+
             this.panelScanBook.Controls.Add(this.lblScanBook);
+            this.panelScanBook.Controls.Add(this.lblReaderInfoTake);
             AddMarqueeTo(this.panelScanBook);
 
-            // S5 — Ожидание книги (возврат)
+            // ====== S5 — Ожидание книги (возврат) ======
             this.panelScanBookReturn.Location = new Point(0, 0);
             this.panelScanBookReturn.Size = new Size(800, 600);
+
+            this.lblReaderInfoReturn.AutoSize = false;
+            this.lblReaderInfoReturn.Dock = DockStyle.Top;
+            this.lblReaderInfoReturn.Height = 72;
+            this.lblReaderInfoReturn.TextAlign = ContentAlignment.MiddleCenter;
+            this.lblReaderInfoReturn.Font = new Font("Segoe UI", 14F, FontStyle.Regular);
+            this.lblReaderInfoReturn.ForeColor = Color.FromArgb(45, 45, 45);
+            this.lblReaderInfoReturn.Text = "";
+
             SetupBigLabel(this.lblScanBookReturn, "Поднесите возвращаемую книгу к считывателю");
+
             this.panelScanBookReturn.Controls.Add(this.lblScanBookReturn);
+            this.panelScanBookReturn.Controls.Add(this.lblReaderInfoReturn);
             AddMarqueeTo(this.panelScanBookReturn);
 
             // S6 — Успех
@@ -149,7 +177,7 @@ namespace LibraryTerminal
             this.lblError.Text = "Ошибка";
             this.panelError.Controls.Add(this.lblError);
 
-            // ========= Добавление всех панелей на форму =========
+            // ========= Добавление всех панелей =========
             this.Controls.Add(this.panelMenu);
             this.Controls.Add(this.panelWaitCardTake);
             this.Controls.Add(this.panelWaitCardReturn);
@@ -173,7 +201,7 @@ namespace LibraryTerminal
 
             this.ResumeLayout(false);
 
-            // Кнопка «Тест ИРБИС» (необязательная — на панели меню)
+            // Кнопка «Тест ИРБИС» на панели меню
             var btnTestIrbis = new System.Windows.Forms.Button();
             btnTestIrbis.Size = new System.Drawing.Size(200, 44);
             btnTestIrbis.Location = new System.Drawing.Point((800 - 200) / 2, 410);
@@ -183,7 +211,7 @@ namespace LibraryTerminal
             this.panelMenu.Controls.Add(btnTestIrbis);
         }
 
-        // === Вынесенные хелперы (чтобы не было локальных функций внутри InitializeComponent) ===
+        // Хелперы для оформления экранов
         private void SetupBigLabel(Label lbl, string text)
         {
             lbl.AutoSize = false;
@@ -220,7 +248,6 @@ namespace LibraryTerminal
         private Button btnTakeBook;
         private Button btnReturnBook;
 
-        // подписи
         private Label lblTitleMenu;
         private Label lblWaitCardTake;
         private Label lblWaitCardReturn;
@@ -230,6 +257,10 @@ namespace LibraryTerminal
         private Label lblOverflow;
         private Label lblNoTag;
         private Label lblError;
+
+        // НОВОЕ: инфоблок о читателе
+        private Label lblReaderInfoTake;
+        private Label lblReaderInfoReturn;
 
         // поля под демо-кнопки (создаются программно)
         private Button btnSimCardTake;
