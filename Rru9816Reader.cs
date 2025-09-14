@@ -1,83 +1,73 @@
 ﻿using System;
+using System.IO;
 using System.Text.RegularExpressions;
 
 namespace LibraryTerminal
 {
     /// <summary>
-    /// RRU9816-USB: читает EPC-96 книжных меток и отдаёт событие OnEpcHex.
-    /// Работает поверх базового SerialWorker (читает построчно по заданному newline).
-    ///
-    /// Задача класса:
-    ///  - извлечь из входной строки последовательности ровно из 24 HEX-символов (EPC-96)
-    ///  - подавить дребезг (не дублировать тот же EPC в коротком окне)
-    ///  - отдать наружу событие OnEpcHex(epcHex)
-    ///
-    /// Примечание:
-    ///  Если прошивка ридера меняет формат строки (префиксы/суффиксы),
-    ///  чаще всего всё равно внутри будет 24 HEX-символа — регулярка их достанет.
+    /// RRU9816: читает EPC-96 (24 HEX) из построчного ASCII-потока SerialWorker.
+    /// Извлекает первую подпоследовательность из ≥24 HEX, берёт первые 24,
+    /// подавляет дребезг и поднимает событие OnEpcHex(epc24).
+    /// Лог пишет и в epc.log, и дублирует в консоль.
     /// </summary>
     internal sealed class Rru9816Reader : SerialWorker
     {
-        /// <summary>
-        /// Срабатывает для каждого распознанного EPC-96 (строка из 24 HEX-символов).
-        /// </summary>
-        public event Action<string> OnEpcHex;
+        public event Action<string> OnEpcHex; // EPC (24 HEX, UPPER)
 
-        // Ищем в тексте любые подряд идущие 24 шестнадцатеричных символа.
-        private static readonly Regex EpcRegex =
-            new Regex(@"([0-9A-F]{24})", RegexOptions.Compiled | RegexOptions.CultureInvariant);
+        private static readonly Regex RxHex24Plus =
+            new Regex(@"([0-9A-Fa-f]{24,})", RegexOptions.Compiled | RegexOptions.CultureInvariant);
 
-        // Память для "антидребезга"
         private string _lastEpc;
         private DateTime _lastEpcTs = DateTime.MinValue;
-        private readonly TimeSpan _dedupWindow = TimeSpan.FromMilliseconds(300);
+        private readonly TimeSpan _dedupWindow;
 
-        /// <param name="portName">COM-порт (например, "COM5" или auto:... через PortResolver)</param>
-        /// <param name="baudRate">Скорость порта (обычно 115200)</param>
-        /// <param name="newline">Разделитель строк (обычно "\r\n")</param>
-        /// <param name="readTimeoutMs">Таймаут чтения</param>
-        /// <param name="writeTimeoutMs">Таймаут записи</param>
-        /// <param name="autoReconnectMs">Период автопереподключения</param>
+        private static readonly string LogPath =
+        Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Desktop), "epc.log");
+
+
         public Rru9816Reader(
             string portName,
             int baudRate,
             string newline,
             int readTimeoutMs,
             int writeTimeoutMs,
-            int autoReconnectMs
+            int autoReconnectMs,
+            int debounceMs = 300
         )
         : base(portName, baudRate, newline, readTimeoutMs, writeTimeoutMs, autoReconnectMs)
         {
+            _dedupWindow = TimeSpan.FromMilliseconds(Math.Max(50, debounceMs));
+            SafeLog($"==== START RRU9816 Port={portName}, Baud={baudRate}, NL={newline} @ {DateTime.Now:HH:mm:ss} ====");
         }
 
-        /// <summary>
-        /// Вызывается базовым SerialWorker на каждую принятую строку.
-        /// Здесь парсим EPC и шлём событие наружу.
-        /// </summary>
         protected override void OnLine(string line)
         {
             if (string.IsNullOrWhiteSpace(line)) return;
 
-            string upper = line.ToUpperInvariant();
-            var matches = EpcRegex.Matches(upper);
-            if (matches.Count == 0) return;
+            SafeLog($"[RAW] {DateTime.Now:HH:mm:ss.fff} {line}");
 
-            foreach (Match m in matches)
+            var m = RxHex24Plus.Match(line);
+            if (!m.Success) return;
+
+            var hex = m.Groups[1].Value.ToUpperInvariant();
+            if (hex.Length < 24) return;
+            var epc = hex.Substring(0, 24);
+
+            if (_lastEpc == epc && (DateTime.UtcNow - _lastEpcTs) < _dedupWindow) return;
+
+            _lastEpc = epc;
+            _lastEpcTs = DateTime.UtcNow;
+            SafeLog($"[EPC] {DateTime.Now:HH:mm:ss.fff} {epc}");
+            OnEpcHex?.Invoke(epc);
+        }
+
+        private static void SafeLog(string line)
+        {
+            try
             {
-                var epc = m.Groups[1].Value; // 24 HEX
-                if (epc.Length != 24) continue;
-
-                // "Антидребезг": не спамим одинаковым EPC в течение короткого окна
-                var now = DateTime.UtcNow;
-                if (_lastEpc == epc && (now - _lastEpcTs) < _dedupWindow)
-                    continue;
-
-                _lastEpc = epc;
-                _lastEpcTs = now;
-
-                var handler = OnEpcHex;
-                if (handler != null) handler(epc);
-            }
+                File.AppendAllText(LogPath, line + Environment.NewLine);
+                Console.WriteLine(line);
+            } catch { /* no-throw лог */ }
         }
     }
 }
