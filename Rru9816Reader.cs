@@ -24,7 +24,6 @@ namespace LibraryTerminal
         private static readonly string LogPath =
         Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Desktop), "epc.log");
 
-
         public Rru9816Reader(
             string portName,
             int baudRate,

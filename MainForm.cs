@@ -1,26 +1,30 @@
 using System;
 using System.Configuration;
+using System.Diagnostics;
 using System.Linq;
+using System.Text;
 using System.Threading.Tasks;
 using System.Windows.Forms;
-using System.Text;
-using System.Diagnostics; // <-- для Debug.WriteLine
-using WinFormsTimer = System.Windows.Forms.Timer;
+
+// ИРБИС клиент для форматирования brief
+using ManagedClient;
 
 // PC/SC
 using PCSC;
 using PCSC.Exceptions;
 using PCSC.Iso7816;
 
-// ИРБИС клиент для форматирования brief
-using ManagedClient;
+using WinFormsTimer = System.Windows.Forms.Timer;
 
 namespace LibraryTerminal
 {
     public partial class MainForm : Form
     {
-        private enum Screen { S1_Menu, S2_WaitCardTake, S3_WaitBookTake, S4_WaitCardReturn, S5_WaitBookReturn, S6_Success, S7_BookRejected, S8_CardFail, S9_NoSpace }
-        private enum Mode { None, Take, Return }
+        private enum Screen
+        { S1_Menu, S2_WaitCardTake, S3_WaitBookTake, S4_WaitCardReturn, S5_WaitBookReturn, S6_Success, S7_BookRejected, S8_CardFail, S9_NoSpace }
+
+        private enum Mode
+        { None, Take, Return }
 
         private Screen _screen = Screen.S1_Menu;
         private Mode _mode = Mode.None;
@@ -33,21 +37,18 @@ namespace LibraryTerminal
         private readonly WinFormsTimer _tick = new WinFormsTimer { Interval = 250 };
         private DateTime? _deadline = null;
 
-        private static readonly bool USE_EMULATOR =
-            bool.TryParse(ConfigurationManager.AppSettings["UseEmulator"], out var _emu) && _emu;
-        private static readonly bool DRY_RUN =
-            bool.TryParse(ConfigurationManager.AppSettings["DryRun"], out var _dry) && _dry;
-
-        private static readonly bool DEMO_UI =
-            bool.TryParse(ConfigurationManager.AppSettings["UseEmulator"], out var _emuUI) && _emuUI;
-        private static readonly bool DEMO_KEYS =
-            bool.TryParse(ConfigurationManager.AppSettings["DemoKeys"], out var _dk) && _dk;
+        private static bool _emu, _dry, _emuUI, _dk;
+        private static readonly bool USE_EMULATOR = bool.TryParse(ConfigurationManager.AppSettings["UseEmulator"], out _emu) && _emu;
+        private static readonly bool DRY_RUN = bool.TryParse(ConfigurationManager.AppSettings["DryRun"], out _dry) && _dry;
+        private static readonly bool DEMO_UI = bool.TryParse(ConfigurationManager.AppSettings["UseEmulator"], out _emuUI) && _emuUI;
+        private static readonly bool DEMO_KEYS = bool.TryParse(ConfigurationManager.AppSettings["DemoKeys"], out _dk) && _dk;
 
         private const string STATUS_IN_STOCK = "0";
         private const string STATUS_ISSUED = "1";
 
         // IRBIS и оборудование
         private IrbisServiceManaged _svc;
+
         private BookReaderSerial _bookTake;
         private BookReaderSerial _bookReturn;
         private ArduinoClientSerial _ardu;
@@ -60,6 +61,7 @@ namespace LibraryTerminal
 
         // Эмулятор UI
         private Panel _emuPanel;
+
         private TextBox _emuUid;
         private TextBox _emuRfid;
         private Button _btnEmuCard;
@@ -67,47 +69,48 @@ namespace LibraryTerminal
         private Button _btnEmuBookReturn;
         private CheckBox _chkDryRun;
 
-        private static Task OffUi(Action a) => Task.Run(a);
-        private static Task<T> OffUi<T>(Func<T> f) => Task.Run(f);
+        private static Task OffUi(Action a)
+        { return Task.Run(a); }
+
+        private static Task<T> OffUi<T>(Func<T> f)
+        { return Task.Run(f); }
 
         public MainForm()
         {
             InitializeComponent();
             this.KeyPreview = true;
-
-            this.KeyDown += async (s, e) => {
-                if (e.KeyCode == Keys.F2) { await DebugProbeAllReaders(); e.Handled = true; }
-            };
+            this.KeyDown += async (s, e) => { if (e.KeyCode == Keys.F2) { await DebugProbeAllReaders(); e.Handled = true; } };
         }
 
         private static string GetConnString()
         {
-            var cfg = ConfigurationManager.AppSettings["ConnectionString"]
-                   ?? ConfigurationManager.AppSettings["connection-string"];
+            var cfg = ConfigurationManager.AppSettings["ConnectionString"] ?? ConfigurationManager.AppSettings["connection-string"];
             if (!string.IsNullOrWhiteSpace(cfg)) return cfg;
             return "host=127.0.0.1;port=6666;user=MASTER;password=MASTERKEY;db=IBIS;";
         }
-        private static string GetBooksDb() => ConfigurationManager.AppSettings["BooksDb"] ?? "IBIS";
+
+        private static string GetBooksDb()
+        { return ConfigurationManager.AppSettings["BooksDb"] ?? "IBIS"; }
 
         protected override async void OnShown(EventArgs e)
         {
             base.OnShown(e);
-            try { await InitIrbisWithRetryAsync(); } catch { }
+            var _ = await InitIrbisWithRetryAsync(); // тихий старт
         }
 
-        private async Task InitIrbisWithRetryAsync()
+        private async Task<bool> InitIrbisWithRetryAsync()
         {
             string conn = GetConnString();
             string db = GetBooksDb();
-            _svc = new IrbisServiceManaged();
-            Exception last = null;
+            if (_svc == null) _svc = new IrbisServiceManaged();
 
+            Exception last = null;
             for (int i = 0; i < 5; i++)
             {
-                try { await OffUi(() => { _svc.Connect(conn); _svc.UseDatabase(db); }); return; } catch (Exception ex) { last = ex; await Task.Delay(1500); }
+                try { await OffUi(delegate { _svc.Connect(conn); _svc.UseDatabase(db); }); return true; } catch (Exception ex) { last = ex; await Task.Delay(1500); }
             }
-            MessageBox.Show("Ошибка подключения к ИРБИС: " + (last == null ? "неизвестно" : last.Message),
-                "IRBIS", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            try { Trace.WriteLine("IRBIS startup connect failed: " + (last != null ? last.Message : "")); } catch { }
+            return false;
         }
 
         private async Task TestIrbisConnectionAsync()
@@ -118,27 +121,22 @@ namespace LibraryTerminal
                 string db = GetBooksDb();
 
                 if (_svc == null) _svc = new IrbisServiceManaged();
-                await OffUi(() => {
-                    try { _svc.UseDatabase(db); } catch { _svc.Connect(conn); _svc.UseDatabase(db); }
-                });
+                await OffUi(delegate { try { _svc.UseDatabase(db); } catch { _svc.Connect(conn); _svc.UseDatabase(db); } });
 
-                MessageBox.Show("IRBIS: подключение успешно", "IRBIS",
-                    MessageBoxButtons.OK, MessageBoxIcon.Information);
+                MessageBox.Show("IRBIS: подключение успешно", "IRBIS", MessageBoxButtons.OK, MessageBoxIcon.Information);
             } catch (Exception ex)
             {
-                MessageBox.Show("IRBIS: ошибка подключения\n" + ex.Message,
-                    "IRBIS", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                MessageBox.Show("IRBIS: ошибка подключения\n" + ex.Message, "IRBIS", MessageBoxButtons.OK, MessageBoxIcon.Error);
             }
         }
+
         private async Task EnsureIrbisConnectedAsync()
         {
             if (_svc == null) _svc = new IrbisServiceManaged();
             string conn = GetConnString();
             string db = GetBooksDb();
 
-            await OffUi(() => {
-                try { _svc.UseDatabase(db); } catch { _svc.Connect(conn); _svc.UseDatabase(db); }
-            });
+            await OffUi(delegate { try { _svc.UseDatabase(db); } catch { _svc.Connect(conn); _svc.UseDatabase(db); } });
         }
 
         private void MainForm_Load(object sender, EventArgs e)
@@ -199,8 +197,7 @@ namespace LibraryTerminal
                     }
                 } catch (Exception ex)
                 {
-                    MessageBox.Show("Оборудование (COM): " + ex.Message, "COM",
-                        MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                    MessageBox.Show("Оборудование (COM): " + ex.Message, "COM", MessageBoxButtons.OK, MessageBoxIcon.Warning);
                 }
 
                 // --- COM: RRU9816
@@ -208,9 +205,7 @@ namespace LibraryTerminal
                 {
                     string rruPort = PortResolver.Resolve(ConfigurationManager.AppSettings["RruPort"] ?? ConfigurationManager.AppSettings["BookTakePort"]);
                     int rruBaud = int.Parse(ConfigurationManager.AppSettings["RruBaudRate"] ?? ConfigurationManager.AppSettings["BaudBookTake"] ?? ConfigurationManager.AppSettings["BaudBook"] ?? "115200");
-
-                    // по демо-утилите ридер шлёт LF — ставим "\n" по умолчанию
-                    string rruNewline = ConfigurationManager.AppSettings["NewLineRru"] ?? "\n";
+                    string rruNewline = ConfigurationManager.AppSettings["NewLineRru"] ?? "\n"; // LF
 
                     if (!string.IsNullOrWhiteSpace(rruPort))
                     {
@@ -219,18 +214,17 @@ namespace LibraryTerminal
                         // бизнес-логика
                         _rru.OnEpcHex += OnRruEpc;
 
-                        // отладка
+                        // отладка — без окон
                         _rru.OnEpcHex += OnRruEpcDebug;
 
                         _rru.Start();
 
-                        Console.WriteLine($"[RRU] Started on {rruPort} @ {rruBaud}, NL={(rruNewline == "\r\n" ? "CRLF" : rruNewline == "\n" ? "LF" : rruNewline)}");
-                        Debug.WriteLine($"[RRU] Started on {rruPort} @ {rruBaud}, NL={(rruNewline == "\r\n" ? "CRLF" : rruNewline == "\n" ? "LF" : rruNewline)}");
+                        Console.WriteLine("[RRU] Started on " + rruPort + " @ " + rruBaud + ", NL=" + (rruNewline == "\r\n" ? "CRLF" : rruNewline == "\n" ? "LF" : rruNewline));
+                        Debug.WriteLine("[RRU] Started on " + rruPort + " @ " + rruBaud + ", NL=" + (rruNewline == "\r\n" ? "CRLF" : rruNewline == "\n" ? "LF" : rruNewline));
                     }
                 } catch (Exception ex)
                 {
-                    MessageBox.Show("RRU9816: " + ex.Message, "RRU9816",
-                        MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                    MessageBox.Show("RRU9816: " + ex.Message, "RRU9816", MessageBoxButtons.OK, MessageBoxIcon.Warning);
                 }
 
                 // --- COM: IQRFID-5102 (карты)
@@ -243,13 +237,12 @@ namespace LibraryTerminal
                     if (!string.IsNullOrWhiteSpace(iqPort))
                     {
                         _iqrfid = new BookReaderSerial(iqPort, iqBaud, iqNL, readTo, writeTo, reconnMs, debounce);
-                        _iqrfid.OnTag += uid => OnAnyCardUid(uid, "IQRFID-5102");
+                        _iqrfid.OnTag += delegate (string uid) { OnAnyCardUid(uid, "IQRFID-5102"); };
                         _iqrfid.Start();
                     }
                 } catch (Exception ex)
                 {
-                    MessageBox.Show("IQRFID-5102: " + ex.Message, "IQRFID",
-                        MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                    MessageBox.Show("IQRFID-5102: " + ex.Message, "IQRFID", MessageBoxButtons.OK, MessageBoxIcon.Warning);
                 }
 
                 // --- PC/SC: ACR1281
@@ -262,17 +255,15 @@ namespace LibraryTerminal
                     }
                     else _acr = new Acr1281PcscReader();
 
-                    _acr.OnUid += uid => OnAnyCardUid(uid, "ACR1281");
+                    _acr.OnUid += delegate (string uid) { OnAnyCardUid(uid, "ACR1281"); };
                     _acr.Start();
                 } catch (Exception ex)
                 {
-                    MessageBox.Show("PC/SC (ACR1281): " + ex.Message, "PC/SC",
-                        MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                    MessageBox.Show("PC/SC (ACR1281): " + ex.Message, "PC/SC", MessageBoxButtons.OK, MessageBoxIcon.Warning);
                 }
             } catch (Exception ex)
             {
-                MessageBox.Show("Инициализация ридеров: " + ex.Message, "Init",
-                    MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                MessageBox.Show("Инициализация ридеров: " + ex.Message, "Init", MessageBoxButtons.OK, MessageBoxIcon.Warning);
             }
         }
 
@@ -280,12 +271,12 @@ namespace LibraryTerminal
         {
             try { if (_rru != null) _rru.OnEpcHex -= OnRruEpcDebug; } catch { }
             try { if (_bookReturn != null && _bookReturn != _bookTake) _bookReturn.Dispose(); } catch { }
-            try { _bookTake?.Dispose(); } catch { }
-            try { _ardu?.Dispose(); } catch { }
-            try { _acr?.Dispose(); } catch { }
-            try { _rru?.Dispose(); } catch { }
-            try { _iqrfid?.Dispose(); } catch { }
-            try { _svc?.Dispose(); } catch { }
+            try { if (_bookTake != null) _bookTake.Dispose(); } catch { }
+            try { if (_ardu != null) _ardu.Dispose(); } catch { }
+            try { if (_acr != null) _acr.Dispose(); } catch { }
+            try { if (_rru != null) _rru.Dispose(); } catch { }
+            try { if (_iqrfid != null) _iqrfid.Dispose(); } catch { }
+            try { if (_svc != null) _svc.Dispose(); } catch { }
             base.OnFormClosing(e);
         }
 
@@ -299,14 +290,14 @@ namespace LibraryTerminal
                 if (keyData == Keys.D4) { OnBookTagReturn("SIM_BOOK_FULL"); return true; }
             }
 
-            if (keyData == Keys.F9) { _ = TestIrbisConnectionAsync(); return true; }
-            if (keyData == Keys.F8) { _ = ShowBookInfoAsync(); return true; }
+            if (keyData == Keys.F9) { var _ = TestIrbisConnectionAsync(); return true; }
+            if (keyData == Keys.F8) { var _ = ShowBookInfoAsync(); return true; }
 
-            if (USE_EMULATOR && _emuPanel?.Visible == true)
+            if (USE_EMULATOR && _emuPanel != null && _emuPanel.Visible)
             {
-                if (keyData == (Keys.Control | Keys.K)) { _btnEmuCard?.PerformClick(); return true; }
-                if (keyData == (Keys.Control | Keys.T)) { _btnEmuBookTake?.PerformClick(); return true; }
-                if (keyData == (Keys.Control | Keys.R)) { _btnEmuBookReturn?.PerformClick(); return true; }
+                if (keyData == (Keys.Control | Keys.K)) { if (_btnEmuCard != null) _btnEmuCard.PerformClick(); return true; }
+                if (keyData == (Keys.Control | Keys.T)) { if (_btnEmuBookTake != null) _btnEmuBookTake.PerformClick(); return true; }
+                if (keyData == (Keys.Control | Keys.R)) { if (_btnEmuBookReturn != null) _btnEmuBookReturn.PerformClick(); return true; }
             }
             return base.ProcessCmdKey(ref msg, keyData);
         }
@@ -322,7 +313,9 @@ namespace LibraryTerminal
             }
             else { _deadline = null; _tick.Enabled = false; }
         }
-        private void Switch(Screen s, Panel panel) => Switch(s, panel, null);
+
+        private void Switch(Screen s, Panel panel)
+        { Switch(s, panel, null); }
 
         private void Tick_Tick(object sender, EventArgs e)
         {
@@ -335,7 +328,7 @@ namespace LibraryTerminal
 
         private void ShowScreen(Panel p)
         {
-            foreach (Control c in Controls) { if (c is Panel pn) pn.Visible = false; }
+            foreach (Control c in Controls) { var pn = c as Panel; if (pn != null) pn.Visible = false; }
             p.Dock = DockStyle.Fill; p.Visible = true; p.BringToFront();
         }
 
@@ -344,6 +337,7 @@ namespace LibraryTerminal
             _mode = Mode.Take;
             Switch(Screen.S2_WaitCardTake, panelWaitCardTake);
         }
+
         private void btnReturnBook_Click(object sender, EventArgs e)
         {
             _mode = Mode.Return;
@@ -354,16 +348,16 @@ namespace LibraryTerminal
         private void OnAnyCardUid(string rawUid, string source)
         {
             if (InvokeRequired) { BeginInvoke(new Action<string, string>(OnAnyCardUid), rawUid, source); return; }
-            _ = OnAnyCardUidAsync(rawUid, source);
+            var _ = OnAnyCardUidAsync(rawUid, source);
         }
 
         private async Task OnAnyCardUidAsync(string rawUid, string source)
         {
-            SafeAppend("uids.log", $"[{DateTime.Now:yyyy-MM-dd HH:mm:ss}] {source}: {rawUid}");
+            SafeAppend("uids.log", "[" + DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss") + "] " + source + ": " + rawUid);
 
             string uid = NormalizeUid(rawUid);
 
-            bool ok = await OffUi(() => _svc.ValidateCard(uid));
+            bool ok = await OffUi<bool>(delegate { return _svc.ValidateCard(uid); });
             if (!ok) { Switch(Screen.S8_CardFail, panelError, TIMEOUT_SEC_ERROR); return; }
 
             string brief = await SafeGetReaderBriefAsync(_svc.LastReaderMfn);
@@ -374,7 +368,7 @@ namespace LibraryTerminal
             }
             else
             {
-                lblReaderInfoTake.Text = $"Читатель идентифицирован (MFN: {_svc.LastReaderMfn})";
+                lblReaderInfoTake.Text = "Читатель идентифицирован (MFN: " + _svc.LastReaderMfn + ")";
                 lblReaderInfoReturn.Text = lblReaderInfoTake.Text;
             }
 
@@ -398,53 +392,32 @@ namespace LibraryTerminal
             if (InvokeRequired) { BeginInvoke(new Action<string>(OnBookTagTake), tag); return; }
             var bookKey = ResolveBookKey(tag);
             _lastBookTag = bookKey;
-            if (_screen == Screen.S3_WaitBookTake) { _ = HandleTakeAsync(bookKey); }
+            if (_screen == Screen.S3_WaitBookTake) { var _ = HandleTakeAsync(bookKey); }
         }
+
         private void OnBookTagReturn(string tag)
         {
             if (InvokeRequired) { BeginInvoke(new Action<string>(OnBookTagReturn), tag); return; }
             var bookKey = ResolveBookKey(tag);
             _lastBookTag = bookKey;
-            if (_screen == Screen.S5_WaitBookReturn) { _ = HandleReturnAsync(bookKey); }
+            if (_screen == Screen.S5_WaitBookReturn) { var _ = HandleReturnAsync(bookKey); }
         }
+
         private void OnRruEpc(string epcHex)
         {
             if (InvokeRequired) { BeginInvoke(new Action<string>(OnRruEpc), epcHex); return; }
             var bookKey = ResolveBookKey(epcHex);
             _lastBookTag = bookKey;
-            if (_screen == Screen_ScanTake) _ = HandleTakeAsync(bookKey); // защитимся от опечатки:
-            if (_screen == Screen.S3_WaitBookTake) _ = HandleTakeAsync(bookKey);
-            else if (_screen == Screen.S5_WaitBookReturn) _ = HandleReturnAsync(bookKey);
+            if (_screen == Screen_ScanTake) { var __ = HandleTakeAsync(bookKey); }
+            if (_screen == Screen.S3_WaitBookTake) { var ___ = HandleTakeAsync(bookKey); }
+            else if (_screen == Screen.S5_WaitBookReturn) { var ____ = HandleReturnAsync(bookKey); }
         }
 
-        // Доп. обработчик для отладки — пишет EPC в консоль/Output и показывает всплывающее окно
+        // отладка — без MessageBox
         private void OnRruEpcDebug(string epc)
         {
             if (IsDisposed) return;
-            BeginInvoke((Action)(() => {
-                MessageBox.Show($"RRU EPC: {epc}", "RRU9816", MessageBoxButtons.OK, MessageBoxIcon.Information);
-                Console.WriteLine($"[RRU EPC] {epc}");
-                Debug.WriteLine($"[RRU EPC] {epc}");
-                // lblEpc.Text = $"Последний EPC: {epc}";
-            }));
-        }
-
-        private static bool IsHex24Exact(string s)
-        {
-            if (string.IsNullOrEmpty(s) || s.Length != 24) return false;
-            for (int i = 0; i < s.Length; i++)
-            {
-                char c = s[i];
-                bool ok = (c >= '0' && c <= '9') || (c >= 'A' && c <= 'F') || (c >= 'a' && c <= 'f');
-                if (!ok) return false;
-            }
-            return true;
-        }
-
-        private static bool UseEpcBookKey()
-        {
-            var v = ConfigurationManager.AppSettings["UseEpcBookKey"];
-            return !string.IsNullOrEmpty(v) && v.Equals("true", StringComparison.OrdinalIgnoreCase);
+            try { Console.WriteLine("[RRU EPC] " + epc); Debug.WriteLine("[RRU EPC] " + epc); } catch { }
         }
 
         private static string NormalizeHex24(string s)
@@ -452,6 +425,12 @@ namespace LibraryTerminal
             if (string.IsNullOrWhiteSpace(s)) return null;
             var hex = new string(s.Where(Uri.IsHexDigit).Select(char.ToUpperInvariant).ToArray());
             return (hex.Length >= 24) ? hex.Substring(0, 24) : null;
+        }
+
+        private static bool UseEpcBookKey()
+        {
+            var v = ConfigurationManager.AppSettings["UseEpcBookKey"];
+            return !string.IsNullOrEmpty(v) && v.Equals("true", StringComparison.OrdinalIgnoreCase);
         }
 
         private string ResolveBookKey(string tagOrEpc)
@@ -463,44 +442,46 @@ namespace LibraryTerminal
                 {
                     var epc = EpcParser.Parse(hex24);
                     if (epc != null && epc.Kind == TagKind.Book)
-                        return $"{epc.LibraryCode:D2}-{epc.Serial}";
+                        return string.Format("{0:D2}-{1}", epc.LibraryCode, epc.Serial);
                 }
-                return hex24; // сырой EPC (как в 910^H)
+                return hex24; // как хранится в 910^h
             }
-            return tagOrEpc?.Trim();
+            return tagOrEpc != null ? tagOrEpc.Trim() : null;
         }
 
-        private Task<bool> OpenBinAsync() => _ardu == null ? Task.FromResult(true) : OffUi<bool>(() => { _ardu.OpenBin(); return true; });
-        private Task<bool> HasSpaceAsync() => _ardu == null ? Task.FromResult(true) : OffUi<bool>(() => _ardu.HasSpace());
+        private Task<bool> OpenBinAsync()
+        { return _ardu == null ? Task.FromResult(true) : OffUi<bool>(delegate { _ardu.OpenBin(); return true; }); }
+
+        private Task<bool> HasSpaceAsync()
+        { return _ardu == null ? Task.FromResult(true) : OffUi<bool>(delegate { return _ardu.HasSpace(); }); }
 
         // ====== ВЫДАЧА ======
         private async Task HandleTakeAsync(string bookTag)
         {
             try
             {
-                var rec = await OffUi(() => _svc.FindOneByBookRfid(bookTag));
+                var rec = await OffUi<ManagedClient.IrbisRecord>(delegate { return _svc.FindOneByBookRfid(bookTag); });
                 if (rec == null) { Switch(Screen.S7_BookRejected, panelNoTag, TIMEOUT_SEC_NO_TAG); return; }
 
                 var key = IrbisServiceManaged_Normalize(bookTag);
-                var f910 = rec.Fields.Where(f => f.Tag == "910")
-                                     .FirstOrDefault(f => IrbisServiceManaged_Normalize(f.GetFirstSubFieldText('h')) == key);
+                var f910 = rec.Fields.Where(f => f.Tag == "910").FirstOrDefault(f => IrbisServiceManaged_Normalize(f.GetFirstSubFieldText('h')) == key);
                 if (f910 == null) { Switch(Screen.S7_BookRejected, panelNoTag, TIMEOUT_SEC_NO_TAG); return; }
 
                 string status = f910.GetFirstSubFieldText('a') ?? string.Empty;
                 bool canIssue = string.IsNullOrEmpty(status) || status == STATUS_IN_STOCK;
                 if (!canIssue) { Switch(Screen.S7_BookRejected, panelNoTag, TIMEOUT_SEC_NO_TAG); return; }
 
-                if ((_chkDryRun?.Checked ?? false) || DRY_RUN)
+                if ((_chkDryRun != null && _chkDryRun.Checked) || DRY_RUN)
                 {
                     lblSuccess.Text = "Dry-run: найдены читатель и книга (без записи в БД)";
                     Switch(Screen.S6_Success, panelSuccess, TIMEOUT_SEC_SUCCESS);
                     return;
                 }
 
-                bool okSet = await OffUi(() => _svc.UpdateBook910StatusByRfidStrict(rec, bookTag, STATUS_ISSUED, null));
+                bool okSet = await OffUi<bool>(delegate { return _svc.UpdateBook910StatusByRfidStrict(rec, bookTag, STATUS_ISSUED, null); });
                 if (!okSet) { Switch(Screen.S7_BookRejected, panelNoTag, TIMEOUT_SEC_NO_TAG); return; }
 
-                await OffUi(() =>
+                await OffUi<object>(delegate {
                     _svc.AppendRdr40OnIssue(
                         _svc.LastReaderMfn,
                         rec,
@@ -508,8 +489,9 @@ namespace LibraryTerminal
                         ConfigurationManager.AppSettings["MaskMrg"] ?? "09",
                         _svc.CurrentLogin ?? "terminal",
                         ConfigurationManager.AppSettings["BooksDb"] ?? "IBIS"
-                    )
-                );
+                    );
+                    return null;
+                });
 
                 await OpenBinAsync();
                 lblSuccess.Text = "Книга выдана";
@@ -522,9 +504,17 @@ namespace LibraryTerminal
         {
             try
             {
-                var rec = await OffUi(() => _svc.FindOneByBookRfid(bookTag));
+                var rec = await OffUi<ManagedClient.IrbisRecord>(delegate { return _svc.FindOneByBookRfid(bookTag); });
                 if (rec == null)
                 {
+                    // в эмуляторе просто показываем «метка не распознана» и всё
+                    if (USE_EMULATOR)
+                    {
+                        Switch(Screen.S7_BookRejected, panelNoTag, TIMEOUT_SEC_NO_TAG);
+                        return;
+                    }
+
+                    // боевой демо-кейс (можно выключить целиком)
                     Switch(Screen.S7_BookRejected, panelNoTag, null);
                     var hop = new WinFormsTimer { Interval = 2000 };
                     hop.Tick += (s, e2) => { hop.Stop(); hop.Dispose(); Switch(Screen.S9_NoSpace, panelOverflow, TIMEOUT_SEC_NO_SPACE); };
@@ -535,23 +525,24 @@ namespace LibraryTerminal
                 bool hasSpace = await HasSpaceAsync();
                 if (!hasSpace) { Switch(Screen.S9_NoSpace, panelOverflow, TIMEOUT_SEC_NO_SPACE); return; }
 
-                if ((_chkDryRun?.Checked ?? false) || DRY_RUN)
+                if ((_chkDryRun != null && _chkDryRun.Checked) || DRY_RUN)
                 {
                     lblSuccess.Text = "Dry-run: книга найдена (возврат без записи в БД)";
                     Switch(Screen.S6_Success, panelSuccess, TIMEOUT_SEC_SUCCESS);
                     return;
                 }
 
-                bool okSet = await OffUi(() => _svc.UpdateBook910StatusByRfidStrict(rec, bookTag, STATUS_IN_STOCK, null));
+                bool okSet = await OffUi<bool>(delegate { return _svc.UpdateBook910StatusByRfidStrict(rec, bookTag, STATUS_IN_STOCK, null); });
                 if (!okSet) { Switch(Screen.S7_BookRejected, panelNoTag, TIMEOUT_SEC_NO_TAG); return; }
 
-                await OffUi(() =>
+                await OffUi<object>(delegate {
                     _svc.CompleteRdr40OnReturn(
                         bookTag,
                         ConfigurationManager.AppSettings["MaskMrg"] ?? "09",
                         _svc.CurrentLogin ?? "terminal"
-                    )
-                );
+                    );
+                    return null;
+                });
 
                 await OpenBinAsync();
                 lblSuccess.Text = "Книга принята";
@@ -573,13 +564,11 @@ namespace LibraryTerminal
 
                 await EnsureIrbisConnectedAsync();
 
-                var rec = await OffUi(() => _svc.FindOneByBookRfid(tag));
+                var rec = await OffUi<ManagedClient.IrbisRecord>(delegate { return _svc.FindOneByBookRfid(tag); });
                 if (rec == null) { await HandleReturnAsync(tag); return; }
 
                 var key = IrbisServiceManaged_Normalize(tag);
-                var f910 = rec.Fields
-                             .Where(f => f.Tag == "910")
-                             .FirstOrDefault(f => IrbisServiceManaged_Normalize(f.GetFirstSubFieldText('h')) == key);
+                var f910 = rec.Fields.Where(f => f.Tag == "910").FirstOrDefault(f => IrbisServiceManaged_Normalize(f.GetFirstSubFieldText('h')) == key);
 
                 if (f910 == null) { await HandleReturnAsync(tag); return; }
 
@@ -591,8 +580,7 @@ namespace LibraryTerminal
                     await HandleReturnAsync(tag);
             } catch (Exception ex)
             {
-                MessageBox.Show(this, "Авто-обработка книги: " + ex.Message,
-                    "Эмуляция книги", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                MessageBox.Show(this, "Авто-обработка книги: " + ex.Message, "Эмуляция книги", MessageBoxButtons.OK, MessageBoxIcon.Error);
             }
         }
 
@@ -616,11 +604,14 @@ namespace LibraryTerminal
         {
             var back = new Button { Text = "⟵ В меню", Anchor = AnchorStyles.Top | AnchorStyles.Right, Width = 120, Height = 36, Left = this.ClientSize.Width - 130, Top = 8 };
             back.Click += (s, e) => { _mode = Mode.None; Switch(Screen.S1_Menu, panelMenu); };
-            foreach (Control c in Controls) if (c is Panel p) p.Controls.Add(back);
+            foreach (Control c in Controls) { var p = c as Panel; if (p != null) p.Controls.Add(back); }
         }
 
-        private void btnToMenu_Click(object sender, EventArgs e) => Switch(Screen.S1_Menu, panelMenu);
-        private async void TestIrbisConnection(object sender, EventArgs e) => await TestIrbisConnectionAsync();
+        private void btnToMenu_Click(object sender, EventArgs e)
+        { Switch(Screen.S1_Menu, panelMenu); }
+
+        private async void TestIrbisConnection(object sender, EventArgs e)
+        { await TestIrbisConnectionAsync(); }
 
         // ======= Эмулятор: панель =======
         private void InitializeEmulatorPanel()
@@ -630,39 +621,44 @@ namespace LibraryTerminal
             _emuRfid = new TextBox { Left = 8, Top = 38, Width = 260 };
 
             _btnEmuCard = new Button { Left = 276, Top = 6, Width = 180, Height = 26, Text = "Эмулировать КАРТУ" };
-            _btnEmuBookTake = new Button { Left = 276, Top = 36, Width = 180, Height = 26, Text = "Эмулировать КНИГУ (АВТО)" };
-            _btnEmuBookReturn = new Button { Left = 462, Top = 36, Width = 200, Height = 26, Text = "Эмулировать КНИГУ (АВТО)" };
+            _btnEmuBookTake = new Button { Left = 276, Top = 36, Width = 180, Height = 26, Text = "Эмулировать ВЫДАЧУ" };
+            _btnEmuBookReturn = new Button { Left = 462, Top = 36, Width = 200, Height = 26, Text = "Эмулировать ВОЗВРАТ" };
 
             _chkDryRun = new CheckBox { Left = 462, Top = 8, Width = 160, Text = "Dry-run (без записи)" };
             _chkDryRun.Checked = DRY_RUN;
 
             _btnEmuCard.Click += async (_, __) => {
-                var uidRaw = _emuUid.Text?.Trim();
+                var uidRaw = _emuUid.Text != null ? _emuUid.Text.Trim() : null;
                 if (string.IsNullOrEmpty(uidRaw)) { MessageBox.Show("Введите UID карты"); return; }
                 try
                 {
                     await EnsureIrbisConnectedAsync();
                     var uid = NormalizeUid(uidRaw);
-                    bool ok = await OffUi(() => _svc.ValidateCard(uid));
-                    if (!ok) { MessageBox.Show(this, $"Читатель с UID '{uid}' не найден.", "Проверка карты", MessageBoxButtons.OK, MessageBoxIcon.Warning); return; }
+                    bool ok = await OffUi<bool>(delegate { return _svc.ValidateCard(uid); });
+                    if (!ok) { MessageBox.Show(this, "Читатель с UID '" + uid + "' не найден.", "Проверка карты", MessageBoxButtons.OK, MessageBoxIcon.Warning); return; }
                     string brief = await SafeGetReaderBriefAsync(_svc.LastReaderMfn);
-                    if (string.IsNullOrWhiteSpace(brief)) brief = $"Читатель найден. MFN: {_svc.LastReaderMfn}";
+                    if (string.IsNullOrWhiteSpace(brief)) brief = "Читатель найден. MFN: " + _svc.LastReaderMfn;
                     brief = brief.Replace("\r", "").Replace("\n", " ");
-                    MessageBox.Show(this, $"OK: {brief}", "Проверка карты", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                    MessageBox.Show(this, "OK: " + brief, "Проверка карты", MessageBoxButtons.OK, MessageBoxIcon.Information);
                     lblReaderInfoTake.Text = brief; lblReaderInfoReturn.Text = brief;
                     if (_screen == Screen.S2_WaitCardTake || _screen == Screen.S4_WaitCardReturn) { await OnAnyCardUidAsync(uid, "EMU"); }
                 } catch (Exception ex) { MessageBox.Show(this, "Ошибка проверки карты: " + ex.Message, "Проверка карты", MessageBoxButtons.OK, MessageBoxIcon.Error); }
             };
 
+            // ВАЖНО: форсируем режим — без авто
             _btnEmuBookTake.Click += async (_, __) => {
-                var tag = _emuRfid.Text?.Trim();
-                if (string.IsNullOrEmpty(tag)) { MessageBox.Show("Введите RFID книги"); return; }
-                await HandleAutoAsync(tag);
+                var tagRaw = _emuRfid.Text != null ? _emuRfid.Text.Trim() : null;
+                if (string.IsNullOrEmpty(tagRaw)) { MessageBox.Show("Введите RFID книги"); return; }
+                await EnsureIrbisConnectedAsync();
+                var tag = ResolveBookKey(tagRaw);
+                await HandleTakeAsync(tag);
             };
             _btnEmuBookReturn.Click += async (_, __) => {
-                var tag = _emuRfid.Text?.Trim();
-                if (string.IsNullOrEmpty(tag)) { MessageBox.Show("Введите RFID книги"); return; }
-                await HandleAutoAsync(tag);
+                var tagRaw = _emuRfid.Text != null ? _emuRfid.Text.Trim() : null;
+                if (string.IsNullOrEmpty(tagRaw)) { MessageBox.Show("Введите RFID книги"); return; }
+                await EnsureIrbisConnectedAsync();
+                var tag = ResolveBookKey(tagRaw);
+                await HandleReturnAsync(tag);
             };
 
             _emuPanel.Controls.AddRange(new Control[] { _emuUid, _emuRfid, _btnEmuCard, _btnEmuBookTake, _btnEmuBookReturn, _chkDryRun });
@@ -684,9 +680,8 @@ namespace LibraryTerminal
                     var readers = ctx.GetReaders();
                     if (readers == null || readers.Length == 0) return null;
 
-                    var picc = readers.FirstOrDefault(r =>
-                        r.IndexOf("PICC", StringComparison.OrdinalIgnoreCase) >= 0
-                        || r.IndexOf("Contactless", StringComparison.OrdinalIgnoreCase) >= 0);
+                    var picc = readers.FirstOrDefault(r => r.IndexOf("PICC", StringComparison.OrdinalIgnoreCase) >= 0
+                                                        || r.IndexOf("Contactless", StringComparison.OrdinalIgnoreCase) >= 0);
                     if (!string.IsNullOrWhiteSpace(picc)) return picc;
 
                     var anyAcr = readers.FirstOrDefault(r => r.IndexOf("ACR1281", StringComparison.OrdinalIgnoreCase) >= 0);
@@ -696,9 +691,7 @@ namespace LibraryTerminal
         }
 
         private static void DiagLog(string msg)
-        {
-            SafeAppend("pcsc_diag.log", $"[{DateTime.Now:yyyy-MM-dd HH:mm:ss}] {msg}");
-        }
+        { SafeAppend("pcsc_diag.log", "[" + DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss") + "] " + msg); }
 
         private async Task DebugProbeAllReaders()
         {
@@ -714,33 +707,25 @@ namespace LibraryTerminal
                     var readers = ctx.GetReaders();
                     if (readers == null || readers.Length == 0)
                     {
-                        MessageBox.Show("PC/SC: ридеры не найдены", "Диагностика",
-                            MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                        MessageBox.Show("PC/SC: ридеры не найдены", "Диагностика", MessageBoxButtons.OK, MessageBoxIcon.Warning);
                         DiagLog("Нет ридеров."); return;
                     }
 
                     sb.AppendLine("Найдены ридеры:");
                     for (int i = 0; i < readers.Length; i++)
                     {
-                        sb.AppendLine($"  {i}: {readers[i]}");
-                        DiagLog($"Reader[{i}]: {readers[i]}");
+                        sb.AppendLine("  " + i + ": " + readers[i]);
+                        DiagLog("Reader[" + i + "]: " + readers[i]);
                     }
 
                     sb.AppendLine();
                     sb.AppendLine("Пробую получить UID (APDU FF CA 00 00 00)...");
-                    var apdu = new CommandApdu(IsoCase.Case2Short, SCardProtocol.Any)
-                    {
-                        CLA = 0xFF,
-                        INS = 0xCA,
-                        P1 = 0x00,
-                        P2 = 0x00,
-                        Le = 0x00
-                    };
+                    var apdu = new CommandApdu(IsoCase.Case2Short, SCardProtocol.Any) { CLA = 0xFF, INS = 0xCA, P1 = 0x00, P2 = 0x00, Le = 0x00 };
 
                     foreach (var reader in readers)
                     {
-                        sb.AppendLine($"--- {reader} ---");
-                        DiagLog($"Connect: {reader}");
+                        sb.AppendLine("--- " + reader + " ---");
+                        DiagLog("Connect: " + reader);
                         try
                         {
                             using (var isoReader = new IsoReader(ctx, reader, SCardShareMode.Shared, SCardProtocol.Any, false))
@@ -750,26 +735,27 @@ namespace LibraryTerminal
                                 if (sw == 0x9000)
                                 {
                                     var uid = BitConverter.ToString(response.GetData()).Replace("-", "");
-                                    sb.AppendLine($"UID: {uid} (OK)");
-                                    DiagLog($"UID OK: {reader} UID={uid}");
+                                    sb.AppendLine("UID: " + uid + " (OK)");
+                                    DiagLog("UID OK: " + reader + " UID=" + uid);
                                 }
                                 else
                                 {
-                                    sb.AppendLine($"SW={sw:X4} (нет карты или команда не поддерживается)");
-                                    DiagLog($"SW={sw:X4} {reader}");
+                                    sb.AppendLine(string.Format("SW={0:X4} (нет карты или команда не поддерживается)", sw));
+                                    DiagLog(string.Format("SW={0:X4} {1}", sw, reader));
                                 }
                             }
                         } catch (PCSCException ex)
                         {
-                            sb.AppendLine($"PCSC: {ex.SCardError} ({ex.Message})");
-                            DiagLog($"PCSC EX: {reader} -> {ex.SCardError} {ex.Message}");
+                            sb.AppendLine("PCSC: " + ex.SCardError + " (" + ex.Message + ")");
+                            DiagLog("PCSC EX: " + reader + " -> " + ex.SCardError + " " + ex.Message);
                         } catch (Exception ex)
                         {
-                            sb.AppendLine($"ERR: {ex.Message}");
-                            DiagLog($"GEN EX: {reader} -> {ex.Message}");
+                            sb.AppendLine("ERR: " + ex.Message);
+                            DiagLog("GEN EX: " + reader + " -> " + ex.Message);
                         }
                     }
-                    sb.AppendLine(); sb.AppendLine("Подсказка: используем ридер с 'PICC' или 'Contactless'.");
+                    sb.AppendLine();
+                    sb.AppendLine("Подсказка: используем ридер с 'PICC' или 'Contactless'.");
                 }
             } catch (Exception ex)
             {
@@ -778,8 +764,7 @@ namespace LibraryTerminal
             }
             finally { DiagLog("=== END ==="); }
 
-            MessageBox.Show(sb.ToString(), "Диагностика PC/SC (F2)",
-                MessageBoxButtons.OK, MessageBoxIcon.Information);
+            MessageBox.Show(sb.ToString(), "Диагностика PC/SC (F2)", MessageBoxButtons.OK, MessageBoxIcon.Information);
         }
 
         private async Task<string> SafeGetReaderBriefAsync(int mfn)
@@ -787,7 +772,7 @@ namespace LibraryTerminal
             try
             {
                 if (mfn <= 0) return null;
-                return await OffUi(() => {
+                return await OffUi<string>(delegate {
                     using (var client = new ManagedClient64())
                     {
                         client.ParseConnectionString(GetConnString());
@@ -806,7 +791,7 @@ namespace LibraryTerminal
             try
             {
                 if (mfn <= 0) return null;
-                return await OffUi(() => {
+                return await OffUi<string>(delegate {
                     using (var client = new ManagedClient64())
                     {
                         client.ParseConnectionString(GetConnString());
@@ -836,11 +821,10 @@ namespace LibraryTerminal
 
                 tag = ResolveBookKey(tag);
 
-                var rec = await OffUi(() => _svc.FindOneByBookRfid(tag));
+                var rec = await OffUi<ManagedClient.IrbisRecord>(delegate { return _svc.FindOneByBookRfid(tag); });
                 if (rec == null)
                 {
-                    MessageBox.Show(this, $"Книга не найдена по метке: {tag}", "Проверка книги",
-                        MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                    MessageBox.Show(this, "Книга не найдена по метке: " + tag, "Проверка книги", MessageBoxButtons.OK, MessageBoxIcon.Warning);
                     return;
                 }
 
@@ -850,21 +834,21 @@ namespace LibraryTerminal
                     var title = rec.FM("200", 'a') ?? "(без заглавия)";
                     var shifr = rec.FM("903");
                     var invs = string.Join(", ", rec.FMA("910", 'b') ?? new string[0]);
-                    brief = $"{title}\nШифр: {shifr}\nИнвентарные №: {invs}";
+                    brief = title + "\nШифр: " + shifr + "\nИнвентарные №: " + invs;
                 }
 
                 MessageBox.Show(this, brief.Trim(), "Книга", MessageBoxButtons.OK, MessageBoxIcon.Information);
             } catch (Exception ex)
             {
-                MessageBox.Show(this, "Ошибка проверки книги: " + ex.Message, "Проверка книги",
-                    MessageBoxButtons.OK, MessageBoxIcon.Error);
+                MessageBox.Show(this, "Ошибка проверки книги: " + ex.Message, "Проверка книги", MessageBoxButtons.OK, MessageBoxIcon.Error);
             }
         }
 
-        private async void btnCheckBook_Click(object sender, EventArgs e) => await ShowBookInfoAsync();
+        private async void btnCheckBook_Click(object sender, EventArgs e)
+        { await ShowBookInfoAsync(); }
 
-        // --- МАЛЕНЬКИЙ InputBox ---
-        private static string Ask(string title, string prompt, string def = "")
+        // --- маленький InputBox ---
+        private static string Ask(string title, string prompt, string def)
         {
             using (var f = new Form())
             using (var txt = new TextBox())
@@ -896,7 +880,6 @@ namespace LibraryTerminal
             return s.ToUpperInvariant();
         }
 
-        // небольшой alias, чтобы не ошибиться именем
-        private Screen Screen_ScanTake => Screen.S3_WaitBookTake;
+        private Screen Screen_ScanTake { get { return Screen.S3_WaitBookTake; } }
     }
 }

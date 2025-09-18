@@ -26,3 +26,4 @@ C:\SideProjects\RFID-Library\bin\Build\PCSC.Iso7816.dll
 C:\SideProjects\RFID-Library\bin\Build\PCSC.Iso7816.pdb
 C:\SideProjects\RFID-Library\bin\Build\PCSC.Iso7816.xml
 C:\SideProjects\RFID-Library\bin\Build\LibraryTerminal.exe.config
+C:\SideProjects\RFID-Library\obj\Build\LibraryTerminal.exe.config
