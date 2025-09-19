@@ -4,7 +4,7 @@ using System.Threading;
 
 namespace LibraryTerminal
 {
-    abstract class SerialWorker : IDisposable
+    internal abstract class SerialWorker : IDisposable
     {
         protected readonly string _portName;
         protected readonly int _baud;
@@ -48,8 +48,12 @@ namespace LibraryTerminal
             try { _sp?.Dispose(); } catch { }
         }
 
-        protected virtual void OnOpened() { }
-        protected virtual void OnClosed(Exception ex) { }
+        protected virtual void OnOpened()
+        { }
+
+        protected virtual void OnClosed(Exception ex)
+        { }
+
         protected abstract void OnLine(string line);
 
         private void Loop()

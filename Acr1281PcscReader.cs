@@ -6,7 +6,6 @@ using System.Threading.Tasks;
 
 namespace LibraryTerminal
 {
-    
     public sealed class Acr1281PcscReader : IDisposable
     {
         // ===== События =====
@@ -14,12 +13,14 @@ namespace LibraryTerminal
 
         // ===== Параметры =====
         private readonly string _preferNameContains;
+
         private readonly int _pollIntervalMs;
         private readonly int _connectRetries;
         private readonly int _busyRetryDelayMs;
 
         // ===== Служебное =====
         private CancellationTokenSource _cts;
+
         private Task _worker;
 
         public Acr1281PcscReader(
@@ -190,6 +191,7 @@ namespace LibraryTerminal
 
         // ===== P/Invoke winscard =====
         private const int SCARD_S_SUCCESS = 0x00000000;
+
         private const int SCARD_SCOPE_USER = 0x0000;
         private const int SCARD_SHARE_SHARED = 0x0002;
         private const int SCARD_PROTOCOL_T0 = 0x0001;
@@ -198,6 +200,7 @@ namespace LibraryTerminal
 
         // Ошибки
         private const int SCARD_E_NO_SMARTCARD = unchecked((int)0x8010000C);
+
         private const int SCARD_E_SHARING_VIOLATION = unchecked((int)0x8010000F);
 
         [StructLayout(LayoutKind.Sequential)]

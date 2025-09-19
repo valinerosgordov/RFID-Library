@@ -69,11 +69,8 @@ namespace LibraryTerminal
         private Button _btnEmuBookReturn;
         private CheckBox _chkDryRun;
 
-        private static Task OffUi(Action a)
-        { return Task.Run(a); }
-
-        private static Task<T> OffUi<T>(Func<T> f)
-        { return Task.Run(f); }
+        private static Task OffUi(Action a) { return Task.Run(a); }
+        private static Task<T> OffUi<T>(Func<T> f) { return Task.Run(f); }
 
         public MainForm()
         {
@@ -88,7 +85,6 @@ namespace LibraryTerminal
             if (!string.IsNullOrWhiteSpace(cfg)) return cfg;
             return "host=127.0.0.1;port=6666;user=MASTER;password=MASTERKEY;db=IBIS;";
         }
-
         private static string GetBooksDb()
         { return ConfigurationManager.AppSettings["BooksDb"] ?? "IBIS"; }
 
@@ -213,7 +209,6 @@ namespace LibraryTerminal
 
                         // бизнес-логика
                         _rru.OnEpcHex += OnRruEpc;
-
                         // отладка — без окон
                         _rru.OnEpcHex += OnRruEpcDebug;
 
@@ -313,9 +308,7 @@ namespace LibraryTerminal
             }
             else { _deadline = null; _tick.Enabled = false; }
         }
-
-        private void Switch(Screen s, Panel panel)
-        { Switch(s, panel, null); }
+        private void Switch(Screen s, Panel panel) { Switch(s, panel, null); }
 
         private void Tick_Tick(object sender, EventArgs e)
         {
@@ -337,7 +330,6 @@ namespace LibraryTerminal
             _mode = Mode.Take;
             Switch(Screen.S2_WaitCardTake, panelWaitCardTake);
         }
-
         private void btnReturnBook_Click(object sender, EventArgs e)
         {
             _mode = Mode.Return;
@@ -394,7 +386,6 @@ namespace LibraryTerminal
             _lastBookTag = bookKey;
             if (_screen == Screen.S3_WaitBookTake) { var _ = HandleTakeAsync(bookKey); }
         }
-
         private void OnBookTagReturn(string tag)
         {
             if (InvokeRequired) { BeginInvoke(new Action<string>(OnBookTagReturn), tag); return; }
@@ -402,7 +393,6 @@ namespace LibraryTerminal
             _lastBookTag = bookKey;
             if (_screen == Screen.S5_WaitBookReturn) { var _ = HandleReturnAsync(bookKey); }
         }
-
         private void OnRruEpc(string epcHex)
         {
             if (InvokeRequired) { BeginInvoke(new Action<string>(OnRruEpc), epcHex); return; }
@@ -413,7 +403,7 @@ namespace LibraryTerminal
             else if (_screen == Screen.S5_WaitBookReturn) { var ____ = HandleReturnAsync(bookKey); }
         }
 
-        // отладка — без MessageBox
+        // отладка без MessageBox
         private void OnRruEpcDebug(string epc)
         {
             if (IsDisposed) return;
@@ -426,13 +416,11 @@ namespace LibraryTerminal
             var hex = new string(s.Where(Uri.IsHexDigit).Select(char.ToUpperInvariant).ToArray());
             return (hex.Length >= 24) ? hex.Substring(0, 24) : null;
         }
-
         private static bool UseEpcBookKey()
         {
             var v = ConfigurationManager.AppSettings["UseEpcBookKey"];
             return !string.IsNullOrEmpty(v) && v.Equals("true", StringComparison.OrdinalIgnoreCase);
         }
-
         private string ResolveBookKey(string tagOrEpc)
         {
             var hex24 = NormalizeHex24(tagOrEpc);
@@ -451,7 +439,6 @@ namespace LibraryTerminal
 
         private Task<bool> OpenBinAsync()
         { return _ardu == null ? Task.FromResult(true) : OffUi<bool>(delegate { _ardu.OpenBin(); return true; }); }
-
         private Task<bool> HasSpaceAsync()
         { return _ardu == null ? Task.FromResult(true) : OffUi<bool>(delegate { return _ardu.HasSpace(); }); }
 
@@ -478,11 +465,9 @@ namespace LibraryTerminal
                     return;
                 }
 
-                bool okSet = await OffUi<bool>(delegate { return _svc.UpdateBook910StatusByRfidStrict(rec, bookTag, STATUS_ISSUED, null); });
-                if (!okSet) { Switch(Screen.S7_BookRejected, panelNoTag, TIMEOUT_SEC_NO_TAG); return; }
-
-                await OffUi<object>(delegate {
-                    _svc.AppendRdr40OnIssue(
+                // ВАЖНО: сначала добавляем 40 в RDR, потом меняем статус 910^a
+                bool ok40 = await OffUi<bool>(delegate {
+                    return _svc.AppendRdr40OnIssue(
                         _svc.LastReaderMfn,
                         rec,
                         bookTag,
@@ -490,8 +475,11 @@ namespace LibraryTerminal
                         _svc.CurrentLogin ?? "terminal",
                         ConfigurationManager.AppSettings["BooksDb"] ?? "IBIS"
                     );
-                    return null;
                 });
+                if (!ok40) { Switch(Screen.S7_BookRejected, panelNoTag, TIMEOUT_SEC_NO_TAG); return; }
+
+                bool okSet = await OffUi<bool>(delegate { return _svc.UpdateBook910StatusByRfidStrict(rec, bookTag, STATUS_ISSUED, null); });
+                if (!okSet) { Switch(Screen.S7_BookRejected, panelNoTag, TIMEOUT_SEC_NO_TAG); return; }
 
                 await OpenBinAsync();
                 lblSuccess.Text = "Книга выдана";
@@ -507,14 +495,10 @@ namespace LibraryTerminal
                 var rec = await OffUi<ManagedClient.IrbisRecord>(delegate { return _svc.FindOneByBookRfid(bookTag); });
                 if (rec == null)
                 {
-                    // в эмуляторе просто показываем «метка не распознана» и всё
-                    if (USE_EMULATOR)
-                    {
-                        Switch(Screen.S7_BookRejected, panelNoTag, TIMEOUT_SEC_NO_TAG);
-                        return;
-                    }
+                    // для эмулятора — только сообщение «метка не распознана»
+                    if (USE_EMULATOR) { Switch(Screen.S7_BookRejected, panelNoTag, TIMEOUT_SEC_NO_TAG); return; }
 
-                    // боевой демо-кейс (можно выключить целиком)
+                    // демонстрационный сценарий (можно убрать)
                     Switch(Screen.S7_BookRejected, panelNoTag, null);
                     var hop = new WinFormsTimer { Interval = 2000 };
                     hop.Tick += (s, e2) => { hop.Stop(); hop.Dispose(); Switch(Screen.S9_NoSpace, panelOverflow, TIMEOUT_SEC_NO_SPACE); };
@@ -532,17 +516,18 @@ namespace LibraryTerminal
                     return;
                 }
 
-                bool okSet = await OffUi<bool>(delegate { return _svc.UpdateBook910StatusByRfidStrict(rec, bookTag, STATUS_IN_STOCK, null); });
-                if (!okSet) { Switch(Screen.S7_BookRejected, panelNoTag, TIMEOUT_SEC_NO_TAG); return; }
-
-                await OffUi<object>(delegate {
-                    _svc.CompleteRdr40OnReturn(
+                // ВАЖНО: сначала закрываем 40 у читателя, потом меняем статус 910^a=0
+                bool ok40 = await OffUi<bool>(delegate {
+                    return _svc.CompleteRdr40OnReturn(
                         bookTag,
                         ConfigurationManager.AppSettings["MaskMrg"] ?? "09",
                         _svc.CurrentLogin ?? "terminal"
                     );
-                    return null;
                 });
+                if (!ok40) { Switch(Screen.S7_BookRejected, panelNoTag, TIMEOUT_SEC_NO_TAG); return; }
+
+                bool okSet = await OffUi<bool>(delegate { return _svc.UpdateBook910StatusByRfidStrict(rec, bookTag, STATUS_IN_STOCK, null); });
+                if (!okSet) { Switch(Screen.S7_BookRejected, panelNoTag, TIMEOUT_SEC_NO_TAG); return; }
 
                 await OpenBinAsync();
                 lblSuccess.Text = "Книга принята";
@@ -554,7 +539,7 @@ namespace LibraryTerminal
             }
         }
 
-        // === АВТО ===
+        // === АВТО (по статусу) ===
         private async Task HandleAutoAsync(string rawTag)
         {
             try
@@ -607,11 +592,8 @@ namespace LibraryTerminal
             foreach (Control c in Controls) { var p = c as Panel; if (p != null) p.Controls.Add(back); }
         }
 
-        private void btnToMenu_Click(object sender, EventArgs e)
-        { Switch(Screen.S1_Menu, panelMenu); }
-
-        private async void TestIrbisConnection(object sender, EventArgs e)
-        { await TestIrbisConnectionAsync(); }
+        private void btnToMenu_Click(object sender, EventArgs e) { Switch(Screen.S1_Menu, panelMenu); }
+        private async void TestIrbisConnection(object sender, EventArgs e) { await TestIrbisConnectionAsync(); }
 
         // ======= Эмулятор: панель =======
         private void InitializeEmulatorPanel()
@@ -844,8 +826,7 @@ namespace LibraryTerminal
             }
         }
 
-        private async void btnCheckBook_Click(object sender, EventArgs e)
-        { await ShowBookInfoAsync(); }
+        private async void btnCheckBook_Click(object sender, EventArgs e) { await ShowBookInfoAsync(); }
 
         // --- маленький InputBox ---
         private static string Ask(string title, string prompt, string def)
@@ -880,6 +861,7 @@ namespace LibraryTerminal
             return s.ToUpperInvariant();
         }
 
+        // небольшой alias, чтобы не ошибиться именем
         private Screen Screen_ScanTake { get { return Screen.S3_WaitBookTake; } }
     }
 }

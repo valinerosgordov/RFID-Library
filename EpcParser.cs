@@ -7,7 +7,8 @@ namespace LibraryTerminal
     /// Тип метки: книга / читательская карта / неизвестно.
     /// Поле "Kind" в EPC-96 задаётся 4-битным нибблом (см. протокол).
     /// </summary>
-    public enum TagKind { Book, Card, Unknown }
+    public enum TagKind
+    { Book, Card, Unknown }
 
     /// <summary>
     /// Результат разбора EPC-96:

@@ -2,9 +2,10 @@
 
 namespace LibraryTerminal
 {
-    class CardReaderSerial : SerialWorker
+    internal class CardReaderSerial : SerialWorker
     {
         public event Action<string> OnUid;
+
         private readonly int _debounceMs;
         private string _last;
         private DateTime _lastAt;
@@ -15,8 +16,11 @@ namespace LibraryTerminal
             _debounceMs = debounceMs;
         }
 
-        protected override void OnOpened() { }
-        protected override void OnClosed(Exception ex) { }
+        protected override void OnOpened()
+        { }
+
+        protected override void OnClosed(Exception ex)
+        { }
 
         protected override void OnLine(string line)
         {
@@ -32,9 +36,10 @@ namespace LibraryTerminal
         }
     }
 
-    class BookReaderSerial : SerialWorker
+    internal class BookReaderSerial : SerialWorker
     {
         public event Action<string> OnTag;
+
         private readonly int _debounceMs;
         private string _last;
         private DateTime _lastAt;
@@ -45,8 +50,11 @@ namespace LibraryTerminal
             _debounceMs = debounceMs;
         }
 
-        protected override void OnOpened() { }
-        protected override void OnClosed(Exception ex) { }
+        protected override void OnOpened()
+        { }
+
+        protected override void OnClosed(Exception ex)
+        { }
 
         protected override void OnLine(string line)
         {
@@ -62,14 +70,17 @@ namespace LibraryTerminal
         }
     }
 
-    class ArduinoClientSerial : SerialWorker
+    internal class ArduinoClientSerial : SerialWorker
     {
         public ArduinoClientSerial(string port, int baud, string newline, int readTimeoutMs, int writeTimeoutMs, int reconnectDelayMs)
             : base(port, baud, newline, readTimeoutMs, writeTimeoutMs, reconnectDelayMs)
         { }
 
-        protected override void OnOpened() { }
-        protected override void OnClosed(Exception ex) { }
+        protected override void OnOpened()
+        { }
+
+        protected override void OnClosed(Exception ex)
+        { }
 
         protected override void OnLine(string line)
         {

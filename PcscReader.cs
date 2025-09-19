@@ -4,25 +4,32 @@ using System.Runtime.InteropServices;
 public sealed class PcscReader : IDisposable
 {
     // ---- P/Invoke ----
-    const int SCARD_SCOPE_USER = 0;
-    const int SCARD_SHARE_SHARED = 2;
-    const int SCARD_PROTOCOL_T0 = 1;
-    const int SCARD_PROTOCOL_T1 = 2;
-    const int SCARD_LEAVE_CARD = 0;
+    private const int SCARD_SCOPE_USER = 0;
+
+    private const int SCARD_SHARE_SHARED = 2;
+    private const int SCARD_PROTOCOL_T0 = 1;
+    private const int SCARD_PROTOCOL_T1 = 2;
+    private const int SCARD_LEAVE_CARD = 0;
 
     [StructLayout(LayoutKind.Sequential)]
-    struct SCARD_IO_REQUEST { public int dwProtocol; public int cbPciLength; }
+    private struct SCARD_IO_REQUEST
+    { public int dwProtocol; public int cbPciLength; }
 
-    static SCARD_IO_REQUEST IOREQ_T0 = new SCARD_IO_REQUEST { dwProtocol = SCARD_PROTOCOL_T0, cbPciLength = 8 };
-    static SCARD_IO_REQUEST IOREQ_T1 = new SCARD_IO_REQUEST { dwProtocol = SCARD_PROTOCOL_T1, cbPciLength = 8 };
+    private static SCARD_IO_REQUEST IOREQ_T0 = new SCARD_IO_REQUEST { dwProtocol = SCARD_PROTOCOL_T0, cbPciLength = 8 };
+    private static SCARD_IO_REQUEST IOREQ_T1 = new SCARD_IO_REQUEST { dwProtocol = SCARD_PROTOCOL_T1, cbPciLength = 8 };
 
-    [DllImport("winscard.dll")] static extern int SCardEstablishContext(int scope, IntPtr r1, IntPtr r2, out IntPtr ctx);
-    [DllImport("winscard.dll")] static extern int SCardReleaseContext(IntPtr ctx);
-    [DllImport("winscard.dll")] static extern int SCardListReaders(IntPtr ctx, byte[] groups, byte[] readers, ref int size);
+    [DllImport("winscard.dll")] private static extern int SCardEstablishContext(int scope, IntPtr r1, IntPtr r2, out IntPtr ctx);
+
+    [DllImport("winscard.dll")] private static extern int SCardReleaseContext(IntPtr ctx);
+
+    [DllImport("winscard.dll")] private static extern int SCardListReaders(IntPtr ctx, byte[] groups, byte[] readers, ref int size);
+
     [DllImport("winscard.dll", CharSet = CharSet.Auto)]
-    static extern int SCardConnect(IntPtr ctx, string reader, int share, int proto, out IntPtr hCard, out int activeProto);
-    [DllImport("winscard.dll")] static extern int SCardDisconnect(IntPtr card, int disposition);
-    [DllImport("winscard.dll")] static extern int SCardTransmit(IntPtr hCard, ref SCARD_IO_REQUEST pioSend, byte[] send, int sendLen, IntPtr recvPci, byte[] recv, ref int recvLen);
+    private static extern int SCardConnect(IntPtr ctx, string reader, int share, int proto, out IntPtr hCard, out int activeProto);
+
+    [DllImport("winscard.dll")] private static extern int SCardDisconnect(IntPtr card, int disposition);
+
+    [DllImport("winscard.dll")] private static extern int SCardTransmit(IntPtr hCard, ref SCARD_IO_REQUEST pioSend, byte[] send, int sendLen, IntPtr recvPci, byte[] recv, ref int recvLen);
 
     private IntPtr _ctx = IntPtr.Zero;
     private readonly string _readerName;

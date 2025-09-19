@@ -174,9 +174,8 @@ namespace LibraryTerminal
         }
 
         /// <summary>
-        /// Поиск книги по RFID (24HEX в 910^h) в BooksDb (обычно IBIS).
-        /// Поддерживает несколько типовых префиксов индекса: H/HI/HIN/RF/RFID.
-        /// В логи пишет каждую попытку.
+        /// Поиск книги по RFID-метке (910^h) в IBIS.
+        /// По умолчанию используем IN= (рекомендация разработчика), но пробуем и H/HI/HIN/RF/RFID.
         /// </summary>
         public MarcRecord FindOneByBookRfid(string rfid)
         {
@@ -199,9 +198,10 @@ namespace LibraryTerminal
 
             // 1) типовые варианты индекса на 910^h
             tryList.AddRange(new[] {
-                "\"H={0}\"",      // стандарт IBIS
+                "\"IN={0}\"",     // IBIS: поиск книги по метке (рекоменд.)
+                "\"H={0}\"",
                 "\"HI={0}\"",
-                "\"HIN={0}\"",    // часто встречается
+                "\"HIN={0}\"",
                 "\"RF={0}\"",
                 "\"RFID={0}\""
             });
@@ -228,7 +228,7 @@ namespace LibraryTerminal
         }
 
         /// <summary>
-        /// Универсальный поиск: если 24HEX — метка (910^h), иначе инвентарный (910^b).
+        /// Универсальный поиск: если 24HEX — метка (по IN=), иначе можно задать другой шаблон.
         /// </summary>
         public MarcRecord FindOneByInvOrTag(string value)
         {
@@ -238,7 +238,7 @@ namespace LibraryTerminal
 
             string booksDb = ConfigurationManager.AppSettings["BooksDb"] ?? "IBIS";
             string exprInv = ConfigurationManager.AppSettings["ExprBookByInv"] ?? "\"IN={0}\"";
-            string exprTag = ConfigurationManager.AppSettings["ExprBookByRfid"] ?? "\"H={0}\"";
+            string exprTag = ConfigurationManager.AppSettings["ExprBookByRfid"] ?? "\"IN={0}\"";
 
             bool looksLikeHex24 = value.Length == 24 && value.All(Uri.IsHexDigit);
             var expr = string.Format(looksLikeHex24 ? exprTag : exprInv, value);
@@ -330,7 +330,7 @@ namespace LibraryTerminal
             return ok;
         }
 
-        /// <summary>Закрыть поле 40 при возврате (ищем по HIN в RDR).</summary>
+        /// <summary>Закрыть поле 40 при возврате (ищем по H= в RDR).</summary>
         public bool CompleteRdr40OnReturn(string rfidHex, string maskMrg, string login)
         {
             rfidHex = NormalizeId(rfidHex);
@@ -339,7 +339,7 @@ namespace LibraryTerminal
             string rdrDb = ConfigurationManager.AppSettings["ReadersDb"] ?? "RDR";
             UseDatabase(rdrDb);
 
-            string expr = string.Format(ConfigurationManager.AppSettings["ExprReaderByItemRfid"] ?? "\"HIN={0}\"", rfidHex);
+            string expr = string.Format(ConfigurationManager.AppSettings["ExprReaderByItemRfid"] ?? "\"H={0}\"", rfidHex);
             var rdr = FindOne(expr);
             if (rdr == null) return false;
 
@@ -383,6 +383,7 @@ namespace LibraryTerminal
             return ok;
         }
 
+        /// <summary>Выдача: СНАЧАЛА 40 в RDR, потом 910^a=1.</summary>
         public string IssueByRfid(string bookRfid)
         {
             bookRfid = NormalizeId(bookRfid);
@@ -392,25 +393,31 @@ namespace LibraryTerminal
             var book = FindOneByBookRfid(bookRfid);
             if (book == null) throw new InvalidOperationException("Книга по RFID не найдена.");
 
-            if (!UpdateBook910StatusByRfidStrict(book, bookRfid, "1"))
-                throw new InvalidOperationException("Не удалось обновить статус книги (910^A=1).");
-
             var maskMrg = GetMaskMrg();
             var dbName = book.Database ?? (ConfigurationManager.AppSettings["BooksDb"] ?? "IBIS");
+
+            // 1) главное действие — запись в RDR
             if (!AppendRdr40OnIssue(LastReaderMfn, book, bookRfid, maskMrg, CurrentLogin, dbName))
                 throw new InvalidOperationException("Не удалось добавить поле 40 читателю.");
+
+            // 2) смена статуса книги
+            if (!UpdateBook910StatusByRfidStrict(book, bookRfid, "1"))
+                throw new InvalidOperationException("Не удалось обновить статус книги (910^A=1).");
 
             return WithDatabase(dbName, delegate { return FormatRecord("@brief", book.Mfn); });
         }
 
+        /// <summary>Возврат: СНАЧАЛА закрываем 40, потом 910^a=0.</summary>
         public string ReturnByRfid(string bookRfid)
         {
             bookRfid = NormalizeId(bookRfid);
             if (string.IsNullOrWhiteSpace(bookRfid)) throw new ArgumentNullException("bookRfid");
 
+            // 1) закрываем поле 40 у читателя
             if (!CompleteRdr40OnReturn(bookRfid, GetMaskMrg(), CurrentLogin))
                 throw new InvalidOperationException("Не удалось обновить поле 40 в записи читателя.");
 
+            // 2) меняем статус в книге
             var book = FindOneByBookRfid(bookRfid);
             if (book == null) throw new InvalidOperationException("Книга по RFID не найдена.");
 
