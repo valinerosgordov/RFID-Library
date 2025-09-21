@@ -13,6 +13,11 @@
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)' == 'Build'">
     <OutputPath>bin\Build\</OutputPath>
+    <Prefer32Bit>false</Prefer32Bit>
+    <PlatformTarget>x86</PlatformTarget>
+  </PropertyGroup>
+  <PropertyGroup>
+    <StartupObject>LibraryTerminal.Program</StartupObject>
   </PropertyGroup>
   <ItemGroup>
     <Reference Include="ManagedClient">
@@ -28,6 +33,7 @@
     <Reference Include="System.Configuration" />
     <Reference Include="System.Core" />
     <Reference Include="System.Management" />
+    <Reference Include="System.Web.Extensions" />
     <Reference Include="System.Windows.Forms" />
     <Reference Include="System.Drawing" />
   </ItemGroup>
@@ -40,9 +46,7 @@
     <Compile Include="PcscReader.cs" />
     <Compile Include="PortResolver.cs" />
     <Compile Include="Program.cs" />
-    <Compile Include="MainForm.cs">
-      <SubType>Form</SubType>
-    </Compile>
+    <Compile Include="MainForm.cs" />
     <Compile Include="MainForm.Designer.cs" />
     <Compile Include="Rru9816Reader.cs" />
     <Compile Include="SerialWorker.cs" />
@@ -54,7 +58,9 @@
   </ItemGroup>
   <ItemGroup>
     <None Include="App.config" />
-    <None Include="packages.config" />
+    <None Include="packages.config">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </None>
   </ItemGroup>
   <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
 </Project>

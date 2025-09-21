@@ -10,11 +10,7 @@ C:\SideProjects\LibraryProject\LibraryTerminal\obj\Build\LibraryTerminal.MainFor
 C:\SideProjects\LibraryProject\LibraryTerminal\obj\Build\LibraryTerminal.csproj.CopyComplete
 C:\SideProjects\LibraryProject\LibraryTerminal\obj\Build\LibraryTerminal.exe
 C:\SideProjects\RFID-Library\bin\Build\LibraryTerminal.exe
-C:\SideProjects\RFID-Library\bin\Build\Antlr4.Runtime.net35.dll
-C:\SideProjects\RFID-Library\bin\Build\ManagedClient.pdb
-C:\SideProjects\RFID-Library\bin\Build\Antlr4.Runtime.net35.xml
 C:\SideProjects\RFID-Library\obj\Build\LibraryTerminal.csproj.AssemblyReference.cache
-C:\SideProjects\RFID-Library\obj\Build\LibraryTerminal.MainForm.resources
 C:\SideProjects\RFID-Library\obj\Build\LibraryTerminal.csproj.GenerateResource.cache
 C:\SideProjects\RFID-Library\obj\Build\LibraryTerminal.csproj.CoreCompileInputs.cache
 C:\SideProjects\RFID-Library\obj\Build\LibraryTerminal.exe
@@ -26,4 +22,6 @@ C:\SideProjects\RFID-Library\bin\Build\PCSC.Iso7816.dll
 C:\SideProjects\RFID-Library\bin\Build\PCSC.Iso7816.pdb
 C:\SideProjects\RFID-Library\bin\Build\PCSC.Iso7816.xml
 C:\SideProjects\RFID-Library\bin\Build\LibraryTerminal.exe.config
+C:\SideProjects\RFID-Library\obj\Build\LibraryTerminal.Logger.resources
+C:\SideProjects\RFID-Library\bin\Build\packages.config
 C:\SideProjects\RFID-Library\obj\Build\LibraryTerminal.exe.config

@@ -14,6 +14,7 @@ namespace LibraryTerminal
     {
         private ManagedClient64 _client;
         private string _currentDb;
+        private string _lastConnectionString;
 
         public string CurrentLogin { get; private set; }
         public int LastReaderMfn { get; private set; }
@@ -32,6 +33,7 @@ namespace LibraryTerminal
             _client = new ManagedClient64();
 
             _client.ParseConnectionString(connectionString);
+            _lastConnectionString = connectionString;
 
             try { _client.Connect(); } catch (Exception ex)
             {
@@ -48,6 +50,29 @@ namespace LibraryTerminal
             _currentDb = _client.Database;
         }
 
+        private void EnsureConnected()
+        {
+            if (_client != null && _client.Connected) return;
+
+            string cs = _lastConnectionString
+                     ?? ConfigurationManager.AppSettings["connection-string"]
+                     ?? "host=127.0.0.1;port=6666;user=MASTER;password=MASTERKEY;db=IBIS;";
+
+            if (_client == null) _client = new ManagedClient64();
+            _client.ParseConnectionString(cs);
+
+            try { _client.Connect(); } catch (Exception ex)
+            {
+                throw new InvalidOperationException(
+                    "IRBIS: нет подключения. " + ExplainConn(cs) + " Error: " + ex.Message, ex);
+            }
+
+            _client.Timeout = 20000;
+            _lastConnectionString = cs;
+            CurrentLogin = _client.Username;
+            if (string.IsNullOrEmpty(_currentDb)) _currentDb = _client.Database;
+        }
+        
         private static string ExplainConn(string cs)
         {
             string host = "?", db = "?", user = "?"; int port = 0;
@@ -67,8 +92,7 @@ namespace LibraryTerminal
 
         public void UseDatabase(string dbName)
         {
-            if (_client == null || !_client.Connected)
-                throw new InvalidOperationException("IRBIS: нет активного подключения.");
+            EnsureConnected();
             _client.Database = dbName;
             _currentDb = dbName;
         }
@@ -93,20 +117,19 @@ namespace LibraryTerminal
             } catch { return "09"; }
         }
 
+        // Пишем в Logs через общий Logger
         private static void LogIrbis(string msg)
         {
             try
             {
-                System.IO.File.AppendAllText("irbis.log",
-                    "[" + DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss") + "] " + msg + Environment.NewLine,
-                    Encoding.UTF8);
+                Logger.Append("irbis.log",
+                    "[" + DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss") + "] " + msg);
             } catch { }
         }
 
         private MarcRecord FindOne(string expression)
         {
-            if (_client == null || !_client.Connected)
-                throw new InvalidOperationException("IRBIS: нет подключения.");
+            EnsureConnected();
             LogIrbis("SEARCH DB=" + _client.Database + " EXPR=" + expression);
             var records = _client.SearchRead(expression);
             return (records != null && records.Length > 0) ? records[0] : null;
@@ -114,31 +137,47 @@ namespace LibraryTerminal
 
         private MarcRecord ReadRecord(int mfn)
         {
-            if (_client == null || !_client.Connected)
-                throw new InvalidOperationException("IRBIS: нет подключения.");
+            EnsureConnected();
             return _client.ReadRecord(mfn);
         }
 
         private bool WriteRecordSafe(MarcRecord record)
         {
-            if (_client == null || !_client.Connected)
-                throw new InvalidOperationException("IRBIS: нет подключения.");
+            EnsureConnected();
             _client.WriteRecord(record, /*needLock*/ false, /*ifUpdate*/ true);
             return true;
         }
 
         private string FormatRecord(string format, int mfn)
         {
-            if (_client == null || !_client.Connected)
-                throw new InvalidOperationException("IRBIS: нет подключения.");
+            EnsureConnected();
             return (_client.FormatRecord(format, mfn) ?? string.Empty).Replace("\r", "").Replace("\n", "");
         }
 
         private T WithDatabase<T>(string db, Func<T> action)
         {
+            EnsureConnected();
             var saved = _client.Database;
             try { _client.Database = db; return action(); }
             finally { _client.Database = saved; }
+        }
+
+        // Быстрая проверка коннекта
+        public bool TestConnection(out string error)
+        {
+            try
+            {
+                EnsureConnected();
+                var db = ConfigurationManager.AppSettings["BooksDb"] ?? "IBIS";
+                var ok = WithDatabase(db, () => { var _ = FormatRecord("@brief", 1); return true; });
+                error = null;
+                return ok;
+            } catch (Exception ex)
+            {
+                error = ex.Message;
+                LogIrbis("TEST FAILED: " + ex.Message);
+                return false;
+            }
         }
 
         // === API для UI ===
@@ -182,12 +221,9 @@ namespace LibraryTerminal
             rfid = NormalizeId(rfid);
             if (string.IsNullOrWhiteSpace(rfid)) return null;
 
-            // строго 24 HEX
-            if (rfid.Length != 24 || !rfid.All(Uri.IsHexDigit))
-            {
-                LogIrbis("BAD RFID KEY: " + rfid);
-                return null;
-            }
+            rfid = new string(rfid.Where(Uri.IsHexDigit).Select(char.ToUpperInvariant).ToArray());
+            if (rfid.Length < 8) { LogIrbis("BAD RFID KEY: " + rfid); return null; }
+            if (rfid.Length > 24) rfid = rfid.Substring(0, 24);
 
             string booksDb = ConfigurationManager.AppSettings["BooksDb"] ?? "IBIS";
 
@@ -232,7 +268,6 @@ namespace LibraryTerminal
         /// </summary>
         public MarcRecord FindOneByInvOrTag(string value)
         {
-            if (_client == null) throw new InvalidOperationException("IRBIS не подключён");
             value = NormalizeId(value);
             if (string.IsNullOrWhiteSpace(value)) return null;
 
@@ -324,7 +359,10 @@ namespace LibraryTerminal
                 .AddSubField('h', rfidHex)
                 .AddSubField('i', string.IsNullOrWhiteSpace(login) ? (CurrentLogin ?? "") : login);
 
-            rdr.Fields.Add(f40);
+            var added = false;
+            try { rdr.Fields.Add(f40); added = true; } catch { }
+            if (!added) return false;
+
             var ok = WriteRecordSafe(rdr);
             LogIrbis("AppendRdr40 MFN=" + readerMfn + " RFID=" + rfidHex + " ok=" + ok);
             return ok;

@@ -1,10 +1,7 @@
 {
   "ExpandedNodes": [
-    "",
-    "\\bin",
-    "\\bin\\Debug",
-    "\\obj"
+    ""
   ],
-  "SelectedNode": "\\LibraryTerminal.csproj",
+  "SelectedNode": "\\LibraryTerminal.sln",
   "PreviewInSolutionExplorer": false
 }
