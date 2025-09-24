@@ -30,3 +30,36 @@
 [2025-09-21 20:19:05] RRU INIT EX: System.InvalidOperationException: RRU9816: порт не найден/не открыт (последний ret=48). COM занято другим процессом или скорость не совпадает с настройкой устройства.
    at LibraryTerminal.Rru9816DllReader.Start()
    at LibraryTerminal.MainForm.MainForm_Load(Object sender, EventArgs e)
+[2025-09-23 04:55:13] RRU INIT EX: System.InvalidOperationException: RRU9816: порт не найден/не открыт (последний ret=48). COM занято другим процессом или скорость не совпадает с настройкой устройства.
+   at LibraryTerminal.Rru9816DllReader.Start()
+   at LibraryTerminal.MainForm.MainForm_Load(Object sender, EventArgs e)
+[2025-09-23 05:12:56] RRU INIT EX: System.InvalidOperationException: RRU9816: порт не найден/не открыт (последний ret=48). COM занято другим процессом или скорость не совпадает с настройкой устройства.
+   at LibraryTerminal.Rru9816DllReader.Start()
+   at LibraryTerminal.MainForm.MainForm_Load(Object sender, EventArgs e)
+[2025-09-23 05:19:23] RRU INIT EX: System.InvalidOperationException: RRU9816: порт не найден/не открыт (последний ret=48). COM занято другим процессом или скорость не совпадает с настройкой устройства.
+   at LibraryTerminal.Rru9816DllReader.Start()
+   at LibraryTerminal.MainForm.MainForm_Load(Object sender, EventArgs e)
+[2025-09-23 05:20:42] RRU INIT EX: System.InvalidOperationException: RRU9816: порт не найден/не открыт (последний ret=48). COM занято другим процессом или скорость не совпадает с настройкой устройства.
+   at LibraryTerminal.Rru9816DllReader.Start()
+   at LibraryTerminal.MainForm.MainForm_Load(Object sender, EventArgs e)
+[2025-09-23 05:36:28] RRU INIT EX: System.InvalidOperationException: RRU9816: порт не найден/не открыт (последний ret=48). COM занято другим процессом или скорость не совпадает с настройкой устройства.
+   at LibraryTerminal.Rru9816DllReader.Start()
+   at LibraryTerminal.MainForm.MainForm_Load(Object sender, EventArgs e)
+[2025-09-23 05:37:17] RRU INIT EX: System.InvalidOperationException: RRU9816: порт не найден/не открыт (последний ret=48). COM занят другим процессом или скорость не совпадает с настройкой устройства.
+   at LibraryTerminal.Rru9816Reader.Start()
+   at LibraryTerminal.MainForm.MainForm_Load(Object sender, EventArgs e)
+[2025-09-23 05:39:17] RRU INIT EX: System.InvalidOperationException: RRU9816: порт не найден/не открыт (последний ret=48). COM занят другим процессом или скорость не совпадает с настройкой устройства.
+   at LibraryTerminal.Rru9816Reader.Start()
+   at LibraryTerminal.MainForm.MainForm_Load(Object sender, EventArgs e)
+[2025-09-23 05:55:14] RRU INIT EX: System.InvalidOperationException: RRU9816: порт не найден/не открыт (последний ret=48). COM занят другим процессом или скорость не совпадает с настройкой устройства.
+   at LibraryTerminal.Rru9816Reader.Start()
+   at LibraryTerminal.MainForm.MainForm_Load(Object sender, EventArgs e)
+[2025-09-23 06:16:39] RRU INIT EX: System.InvalidOperationException: RRU9816: порт не найден/не открыт (последний ret=48). COM занят другим процессом или скорость не совпадает с настройкой устройства.
+   at LibraryTerminal.Rru9816Reader.Start()
+   at LibraryTerminal.MainForm.MainForm_Load(Object sender, EventArgs e)
+[2025-09-23 06:18:40] RRU INIT EX: System.InvalidOperationException: RRU9816: порт не найден/не открыт (последний ret=48). COM занят другим процессом или скорость/адрес не совпадают с настройкой устройства.
+   at LibraryTerminal.Rru9816Reader.Start()
+   at LibraryTerminal.MainForm.MainForm_Load(Object sender, EventArgs e)
+[2025-09-23 06:26:36] RRU INIT EX: System.InvalidOperationException: RRU9816: порт не найден/не открыт (последний ret=48). COM занят другим процессом или скорость/адрес не совпадают с настройкой устройства.
+   at LibraryTerminal.Rru9816Reader.Start()
+   at LibraryTerminal.MainForm.MainForm_Load(Object sender, EventArgs e)

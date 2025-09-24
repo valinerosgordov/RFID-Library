@@ -82,7 +82,7 @@ namespace LibraryTerminal
         private ArduinoClientSerial _ardu;
 
         private Acr1281PcscReader _acr;
-        private Rru9816DllReader _rruDll; // чтение UHF через вендорскую DLL
+        private Rru9816Reader _rruDll; // чтение UHF через вендорскую DLL
 
         private BookReaderSerial _iqrfid;
 
@@ -230,43 +230,43 @@ namespace LibraryTerminal
                     MessageBox.Show("Оборудование (COM): " + ex.Message, "COM", MessageBoxButtons.OK, MessageBoxIcon.Warning);
                 }
 
-                // --- RRU9816 через DLL
+                // --- RRU9816 через DLL (точный выстрел как в демо + перебор внутри ридера)
                 try
                 {
                     string rruPort = ConfigurationManager.AppSettings["RruPort"] ?? "COM5";
                     int rruBaud = int.Parse(ConfigurationManager.AppSettings["RruBaudRate"] ?? "115200");
 
                     _rruDll = null;
-                    var rruDll = new Rru9816DllReader(rruPort, rruBaud, 0x00);
 
-                    // бизнес-событие
-                    rruDll.OnEpcHex += OnRruEpc;
-                    // отладка в файл/Debug
-                    rruDll.OnEpcHex += OnRruEpcDebug;
+                    // ВАЖНО: на твоём демо адрес = 0x00. Передаём именно 0x00.
+                    var rruDll = new Rru9816Reader(rruPort, rruBaud, 0x00);
+
+                    rruDll.OnEpcHex += OnRruEpc;       // бизнес-обработка
+                    rruDll.OnEpcHex += OnRruEpcDebug;  // отладка в лог
 
                     rruDll.Start();
 
-                    var line = $"[RRU-DLL] Started on {(string.IsNullOrWhiteSpace(rruPort) ? "AUTO" : rruPort)} @ {rruBaud} (active mode)";
+                    var line = $"[RRU-DLL] Started on {(string.IsNullOrWhiteSpace(rruPort) ? "AUTO" : rruPort)} @ {rruBaud} (active mode, adr=0x00)";
                     Console.WriteLine(line);
                     Debug.WriteLine(line);
                     Logger.Append("rru.log", $"[{DateTime.Now:yyyy-MM-dd HH:mm:ss}] {line}");
 
                     _rruDll = rruDll;
-                } catch (BadImageFormatException ex) // >>> NEW
+                } catch (BadImageFormatException ex)
                 {
                     Logger.Append("rru.log", $"[{DateTime.Now:yyyy-MM-dd HH:mm:ss}] BAD IMAGE: {ex.Message}");
                     MessageBox.Show(
                         "RRU9816: неверная разрядность процесса/DLL.\n" +
-                        "Нужно запускать x86 и положить x86 DLL рядом с .exe.",
+                        "Нужно собирать x86 и положить x86 DLL рядом с .exe.",
                         "RRU9816", MessageBoxButtons.OK, MessageBoxIcon.Error);
-                } catch (DllNotFoundException ex) // >>> NEW
+                } catch (DllNotFoundException ex)
                 {
                     Logger.Append("rru.log", $"[{DateTime.Now:yyyy-MM-dd HH:mm:ss}] DLL NOT FOUND: {ex.Message}");
                     MessageBox.Show(
                         "RRU9816: не найдена RRU9816.dll или её зависимости (dmdll.dll/CustomControl.dll).\n" +
-                        "Убедитесь, что x86 DLL лежат рядом с .exe (bin\\x86\\Build\\).",
+                        "Убедитесь, что x86 DLL лежат рядом с .exe (bin\\x86\\...).",
                         "RRU9816", MessageBoxButtons.OK, MessageBoxIcon.Error);
-                } catch (Exception ex) // >>> NEW
+                } catch (Exception ex)
                 {
                     Logger.Append("rru.log", $"[{DateTime.Now:yyyy-MM-dd HH:mm:ss}] RRU INIT EX: {ex}");
                     MessageBox.Show("RRU9816 (DLL): " + ex.Message, "RRU9816",
@@ -315,9 +315,9 @@ namespace LibraryTerminal
 
         protected override void OnFormClosing(FormClosingEventArgs e)
         {
-            try { if (_rruDll != null) _rruDll.OnEpcHex -= OnRruEpcDebug; } catch { } // >>> NEW
-            try { if (_rruDll != null) _rruDll.OnEpcHex -= OnRruEpc; } catch { }      // >>> NEW
-            try { if (_rruDll != null) _rruDll.Dispose(); } catch { }                  // (один раз)
+            try { if (_rruDll != null) _rruDll.OnEpcHex -= OnRruEpcDebug; } catch { }
+            try { if (_rruDll != null) _rruDll.OnEpcHex -= OnRruEpc; } catch { }
+            try { if (_rruDll != null) _rruDll.Dispose(); } catch { }
 
             try { if (_bookReturn != null && _bookReturn != _bookTake) _bookReturn.Dispose(); } catch { }
             try { if (_bookTake != null) _bookTake.Dispose(); } catch { }
@@ -496,8 +496,6 @@ namespace LibraryTerminal
                 Console.WriteLine(line);
                 Debug.WriteLine(line);
                 Logger.Append("rru.log", "[" + DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss") + "] " + line);
-
-
             } catch { }
         }
 
@@ -845,7 +843,6 @@ namespace LibraryTerminal
             Logger.Append("pcsc_diag.log",
                 "[" + DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss") + "] " + msg);
         }
-        //aasfhwgwfhhwihfgqnfiwbfiaosjhqifgihiihf oihihksufhqohyfhoiihgkbjgufbuiwbfonquujfh
 
         private async Task DebugProbeAllReaders()
         {

@@ -49,6 +49,7 @@
     <Compile Include="MainForm.cs" />
     <Compile Include="MainForm.Designer.cs" />
     <Compile Include="Rru9816Reader.cs" />
+    <Compile Include="RruOpenHelper.cs" />
     <Compile Include="SerialWorker.cs" />
   </ItemGroup>
   <ItemGroup>
