@@ -258,26 +258,27 @@ namespace LibraryTerminal
                     MessageBox.Show("Оборудование (COM): " + ex.Message, "COM", MessageBoxButtons.OK, MessageBoxIcon.Warning);
                 }
 
-                // --- RRU9816 через DLL (точный выстрел как в демо + перебор внутри ридера)
+                // --- RRU9816 через DLL
                 try
                 {
                     string rruPort = ConfigurationManager.AppSettings["RruPort"] ?? "COM5";
-                    int rruBaud = int.Parse(ConfigurationManager.AppSettings["RruBaudRate"] ?? "115200");
+                    int rruBaud = int.Parse(ConfigurationManager.AppSettings["RruBaudRate"] ?? "57600");
 
                     _rruDll = null;
 
-                    // На демо адрес = 0x00. Передаём именно 0x00.
-                    var rruDll = new Rru9816Reader(rruPort, rruBaud, 0xFF);
+                    // На демо адрес = 0x00.
+                    var rruDll = new Rru9816Reader(rruPort, rruBaud, 0x00);
 
                     rruDll.OnEpcHex += OnRruEpc;       // бизнес-обработка
                     rruDll.OnEpcHex += OnRruEpcDebug;  // отладка в лог
 
                     rruDll.Start();
 
-                    var line = $"[RRU-DLL] Started on {(string.IsNullOrWhiteSpace(rruPort) ? "AUTO" : rruPort)} @ {rruBaud} (active mode, adr=0x00)";
+                    var line = $"[RRU-DLL] Started on {(string.IsNullOrWhiteSpace(rruPort) ? "AUTO" : rruPort)} @ {rruBaud} (adr=0x00)";
                     Console.WriteLine(line);
                     Debug.WriteLine(line);
                     Logger.Append("rru.log", $"[{DateTime.Now:yyyy-MM-dd HH:mm:ss}] {line}");
+                    ;
 
                     _rruDll = rruDll;
                 } catch (BadImageFormatException ex)
