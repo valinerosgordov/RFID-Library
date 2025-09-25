@@ -299,7 +299,7 @@ namespace LibraryTerminal
         private static void NudgeLines(string portName, int baud)
         {
             var sp = new System.IO.Ports.SerialPort(portName, baud,
-                System.IO.Ports.Parity.None, 8, System.IO.Ports.StopBits.One);
+            System.IO.Ports.Parity.None, 8, System.IO.Ports.StopBits.One);
             sp.Handshake = System.IO.Ports.Handshake.None;
             sp.DtrEnable = true;
             sp.RtsEnable = true;
@@ -313,7 +313,6 @@ namespace LibraryTerminal
         {
             try
             {
-                // пытаемся использовать общий Logger, если есть
                 var prop = typeof(Logger).GetProperty("Dir", System.Reflection.BindingFlags.Static | System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.NonPublic);
                 if (prop != null)
                 {

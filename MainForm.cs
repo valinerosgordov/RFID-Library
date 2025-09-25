@@ -71,6 +71,17 @@ namespace LibraryTerminal
         private static readonly bool DEMO_UI = bool.TryParse(ConfigurationManager.AppSettings["UseEmulator"], out _emuUI) && _emuUI;
         private static readonly bool DEMO_KEYS = bool.TryParse(ConfigurationManager.AppSettings["DemoKeys"], out _dk) && _dk;
 
+        // >>> NEW: флаги для гибкой инициализации железа в демо
+        private static bool _forceCards;
+        private static readonly bool FORCE_CARD_READERS_IN_EMU =
+            bool.TryParse(ConfigurationManager.AppSettings["ForceCardReadersInEmu"], out _forceCards) && _forceCards;
+
+        private static bool _enableBooks, _enableArduino;
+        private static readonly bool ENABLE_BOOK_SCANNERS =
+            bool.TryParse(ConfigurationManager.AppSettings["EnableBookScanners"], out _enableBooks) && _enableBooks; // по умолчанию false
+        private static readonly bool ENABLE_ARDUINO =
+            bool.TryParse(ConfigurationManager.AppSettings["EnableArduino"], out _enableArduino) && _enableArduino;   // по умолчанию false
+
         private const string STATUS_IN_STOCK = "0";
         private const string STATUS_ISSUED = "1";
 
@@ -178,7 +189,17 @@ namespace LibraryTerminal
 
             if (DEMO_UI) AddBackButtonForSim();
 
-            if (USE_EMULATOR) { InitializeEmulatorPanel(); return; }
+            // >>> CHANGED: не выходим сразу при эмуляторе, если нужно поднять карточные ридеры
+            if (USE_EMULATOR)
+            {
+                InitializeEmulatorPanel();
+                if (!FORCE_CARD_READERS_IN_EMU)
+                {
+                    // эмуляторный UI без железа
+                    return;
+                }
+                // иначе продолжаем инициализацию железа ниже
+            }
 
             try
             {
@@ -187,43 +208,50 @@ namespace LibraryTerminal
                 int reconnMs = int.Parse(ConfigurationManager.AppSettings["AutoReconnectMs"] ?? "1500");
                 int debounce = int.Parse(ConfigurationManager.AppSettings["DebounceMs"] ?? "250");
 
-                // --- COM: книжные ридеры + Arduino
+                // --- COM: книжные ридеры + Arduino (делаем опциональными для демо)
                 try
                 {
-                    string bookTakePort = PortResolver.Resolve(ConfigurationManager.AppSettings["BookTakePort"] ?? ConfigurationManager.AppSettings["BookPort"]);
-                    string bookRetPort = PortResolver.Resolve(ConfigurationManager.AppSettings["BookReturnPort"] ?? ConfigurationManager.AppSettings["BookPort"]);
-                    string arduinoPort = PortResolver.Resolve(ConfigurationManager.AppSettings["ArduinoPort"]);
-
-                    int baudBookTake = int.Parse(ConfigurationManager.AppSettings["BaudBookTake"] ?? ConfigurationManager.AppSettings["BaudBook"] ?? "9600");
-                    int baudBookRet = int.Parse(ConfigurationManager.AppSettings["BaudBookReturn"] ?? ConfigurationManager.AppSettings["BaudBook"] ?? "9600");
-                    int baudArduino = int.Parse(ConfigurationManager.AppSettings["BaudArduino"] ?? "115200");
-
-                    string nlBookTake = ConfigurationManager.AppSettings["NewLineBookTake"] ?? ConfigurationManager.AppSettings["NewLineBook"] ?? "\r\n";
-                    string nlBookRet = ConfigurationManager.AppSettings["NewLineBookReturn"] ?? ConfigurationManager.AppSettings["NewLineBook"] ?? "\r\n";
-                    string nlArduino = ConfigurationManager.AppSettings["NewLineArduino"] ?? "\n";
-
-                    if (!string.IsNullOrWhiteSpace(bookTakePort))
+                    if (ENABLE_BOOK_SCANNERS)
                     {
-                        _bookTake = new BookReaderSerial(bookTakePort, baudBookTake, nlBookTake, readTo, writeTo, reconnMs, debounce);
-                        _bookTake.OnTag += OnBookTagTake;
-                        _bookTake.Start();
-                    }
+                        string bookTakePort = PortResolver.Resolve(ConfigurationManager.AppSettings["BookTakePort"] ?? ConfigurationManager.AppSettings["BookPort"]);
+                        string bookRetPort = PortResolver.Resolve(ConfigurationManager.AppSettings["BookReturnPort"] ?? ConfigurationManager.AppSettings["BookPort"]);
 
-                    if (!string.IsNullOrWhiteSpace(bookRetPort))
-                    {
-                        if (_bookTake != null && bookRetPort == bookTakePort) _bookReturn = _bookTake;
-                        else
+                        int baudBookTake = int.Parse(ConfigurationManager.AppSettings["BaudBookTake"] ?? ConfigurationManager.AppSettings["BaudBook"] ?? "9600");
+                        int baudBookRet = int.Parse(ConfigurationManager.AppSettings["BaudBookReturn"] ?? ConfigurationManager.AppSettings["BaudBook"] ?? "9600");
+
+                        string nlBookTake = ConfigurationManager.AppSettings["NewLineBookTake"] ?? ConfigurationManager.AppSettings["NewLineBook"] ?? "\r\n";
+                        string nlBookRet = ConfigurationManager.AppSettings["NewLineBookReturn"] ?? ConfigurationManager.AppSettings["NewLineBook"] ?? "\r\n";
+
+                        if (!string.IsNullOrWhiteSpace(bookTakePort))
                         {
-                            _bookReturn = new BookReaderSerial(bookRetPort, baudBookRet, nlBookRet, readTo, writeTo, reconnMs, debounce);
-                            _bookReturn.Start();
+                            _bookTake = new BookReaderSerial(bookTakePort, baudBookTake, nlBookTake, readTo, writeTo, reconnMs, debounce);
+                            _bookTake.OnTag += OnBookTagTake;
+                            _bookTake.Start();
                         }
-                        _bookReturn.OnTag += OnBookTagReturn;
+
+                        if (!string.IsNullOrWhiteSpace(bookRetPort))
+                        {
+                            if (_bookTake != null && bookRetPort == bookTakePort) _bookReturn = _bookTake;
+                            else
+                            {
+                                _bookReturn = new BookReaderSerial(bookRetPort, baudBookRet, nlBookRet, readTo, writeTo, reconnMs, debounce);
+                                _bookReturn.Start();
+                            }
+                            _bookReturn.OnTag += OnBookTagReturn;
+                        }
                     }
 
-                    if (!string.IsNullOrWhiteSpace(arduinoPort))
+                    if (ENABLE_ARDUINO)
                     {
-                        _ardu = new ArduinoClientSerial(arduinoPort, baudArduino, nlArduino, readTo, writeTo, reconnMs);
-                        _ardu.Start();
+                        string arduinoPort = PortResolver.Resolve(ConfigurationManager.AppSettings["ArduinoPort"]);
+                        int baudArduino = int.Parse(ConfigurationManager.AppSettings["BaudArduino"] ?? "115200");
+                        string nlArduino = ConfigurationManager.AppSettings["NewLineArduino"] ?? "\n";
+
+                        if (!string.IsNullOrWhiteSpace(arduinoPort))
+                        {
+                            _ardu = new ArduinoClientSerial(arduinoPort, baudArduino, nlArduino, readTo, writeTo, reconnMs);
+                            _ardu.Start();
+                        }
                     }
                 } catch (Exception ex)
                 {
@@ -238,8 +266,8 @@ namespace LibraryTerminal
 
                     _rruDll = null;
 
-                    // ВАЖНО: на твоём демо адрес = 0x00. Передаём именно 0x00.
-                    var rruDll = new Rru9816Reader(rruPort, rruBaud, 0x00);
+                    // На демо адрес = 0x00. Передаём именно 0x00.
+                    var rruDll = new Rru9816Reader(rruPort, rruBaud, 0xFF);
 
                     rruDll.OnEpcHex += OnRruEpc;       // бизнес-обработка
                     rruDll.OnEpcHex += OnRruEpcDebug;  // отладка в лог
@@ -294,7 +322,11 @@ namespace LibraryTerminal
                 // --- PC/SC: ACR1281
                 try
                 {
-                    string preferred = FindPreferredPiccReaderName() ?? "";
+                    // >>> CHANGED: берём точное имя из конфига, иначе автопоиск
+                    string preferred = ConfigurationManager.AppSettings["AcrReaderName"];
+                    if (string.IsNullOrWhiteSpace(preferred))
+                        preferred = FindPreferredPiccReaderName() ?? "";
+
                     if (!string.IsNullOrWhiteSpace(preferred))
                     {
                         try { _acr = new Acr1281PcscReader(preferred); } catch { _acr = new Acr1281PcscReader(); }
@@ -424,6 +456,9 @@ namespace LibraryTerminal
             string brief = await SafeGetReaderBriefAsync(_svc.LastReaderMfn);
             if (!string.IsNullOrWhiteSpace(brief))
             {
+                // >>> NEW: визуальная пометка источника
+                var src = (source ?? "").ToUpperInvariant();
+                brief = $"[{src}] {brief}";
                 lblReaderInfoTake.Text = brief;
                 lblReaderInfoReturn.Text = brief;
             }
